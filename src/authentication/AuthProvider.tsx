@@ -7,7 +7,8 @@ type AuthContextType = {
   userRole: string | null;
   userName: string | null;
   userId: number | null;
-  login: (id: number, username: string, role: string) => void;
+  userEmail: string | null; // User email
+  login: (id: number, username: string, role: string, email: string) => void;
   logout: () => void;
 };
 
@@ -22,13 +23,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [userId, setUserId] = useState<number | null>(null); // ID of the user
   const [userName, setUserName] = useState<string | null>(null); // Username
   const [userRole, setUserRole] = useState<string | null>(null); // User role
+  const [userEmail, setEmail] = useState<string | null>(null); // User role
 
   // The login function now takes id, username, role, and sets isAuthenticated to true
-  const login = (id: number, username: string, role: string) => {
+  const login = (id: number, username: string, role: string, email: string) => {
     setUserId(id);               // Set the user ID
     setUserName(username);       // Set the username
     setUserRole(role);           // Set the user role
-    setIsAuthenticated(true);    // Set the authentication status to true
+    setIsAuthenticated(true);
+    setEmail(email)
+    // Set the authentication status to true
   };
 
   const logout = () => {
@@ -36,10 +40,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUserRole(null);
     setUserId(null);
     setUserName(null);
+    setEmail(null)
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, userName, userId, userRole, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, userName, userId, userRole, userEmail, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

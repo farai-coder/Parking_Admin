@@ -4,134 +4,169 @@ import 'font-awesome/css/font-awesome.min.css';
 import { useAuth } from './AuthProvider';
 
 type FormData = {
-  username: string;
+  email: string;
   password: string;
 };
 
 const Login: React.FC = () => {
   const [rememberMe, setRememberMe] = useState<boolean>(false);
   const [formData, setFormData] = useState<FormData>({
-    username: '',
+    email: '',
     password: '',
   });
+  const [error, setError] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const { username, password } = formData;
-
-    // Static login credentials
-    const staticCredentials = {
-      admin: { password: 'admin123', role: 'admin', id: 1 },
-      // user: { password: 'user123', role: 'user', id: 2 }
-    };
+    setError('');
+    setIsLoading(true);
 
     try {
-      // Check if username exists in static data
-      if (staticCredentials[username as keyof typeof staticCredentials]) {
-        const userData = staticCredentials[username as keyof typeof staticCredentials];
+      const response = await fetch('http://localhost:8000/auth/login', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password
+        }),
+      });
 
-        // Check if password matches
-        if (password === userData.password) {
-          // Successful login
-          console.log('Login successful with static data');
+      const data = await response.json();
 
-          // Call the login function with static user data
-          login(userData.id, username, userData.role);
+      if (response.ok) {
+        // Assuming your API returns user data including id, name, and role
+        login(data.user_id, data.user_name, data.user_role, data.user_email);
 
-          alert('Login successful!');
-          navigate('/dashboard');
-        } else {
-          // Invalid password
-          console.error('Login failed: Invalid password');
-          alert('Login failed: Invalid password');
-        }
+        // if (rememberMe) {
+        //   localStorage.setItem('rememberMe', 'true');
+        //   localStorage.setItem('authToken', data.token);
+        // } else {
+        //   sessionStorage.setItem('authToken', data.token);
+        // }
+
+        navigate('/dashboard');
       } else {
-        // Invalid username
-        console.error('Login failed: Invalid username');
-        alert('Login failed: Invalid username');
+        setError(data.detail || 'Login failed. Please check your credentials.');
       }
-    } catch (error) {
-      console.error('An error occurred while logging in:', error);
-      alert('An error occurred while logging in. Please try again later.');
+    } catch (err) {
+      setError('An error occurred while logging in. Please try again later.');
+      console.error('Login error:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="w-full max-w-[480px] bg-white rounded-2xl p-8 shadow-lg">
-        <div className="max-w-md mx-auto w-full">
-          <div className="text-center mb-8">
-            <i className="fa-solid fa-shield-halved text-4xl text-blue-600 mb-4"></i>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Sign in to your account</h1>
-            <p className="text-gray-600">
-              Don't have an account?
-              <button
-                onClick={() => navigate('/signup')}
-                className="text-blue-600 hover:text-blue-700 font-medium ml-2 !rounded-button"
-              >
-                Sign up
-              </button>
-            </p>
-          </div>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-                <i className="fa-solid fa-user text-gray-400 mr-2"></i>
-                Username
-              </label>
-              <input
-                type="text"
-                id="username"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                placeholder="Enter your username"
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                <i className="fa-solid fa-lock text-gray-400 mr-2"></i>
-                Password
-              </label>
-              <input
-                type="password"
-                id="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                placeholder="Enter your password"
-                required
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="remember"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="remember" className="ml-2 block text-sm text-gray-700">
-                  Remember me
-                </label>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-gray-50 p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-blue-600 mb-2">Parklee</h1>
+          <p className="text-sm text-gray-500">Smart Parking Solutions</p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 sm:p-8">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 mx-auto mb-4 bg-blue-50 rounded-full flex items-center justify-center">
+                <i className="fas fa-lock text-xl text-blue-500"></i>
               </div>
-              <button className="text-sm font-medium text-blue-600 hover:text-blue-700 !rounded-button">
-                Forgot password?
-              </button>
+              <h2 className="text-xl font-semibold text-gray-800">Sign in to your account</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Don't have an account?{' '}
+                <button
+                  onClick={() => navigate('/signup')}
+                  className="text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Sign up
+                </button>
+              </p>
             </div>
-            <button
-              type="submit"
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium !rounded-button"
-            >
-              <i className="fa-solid fa-right-to-bracket mr-2"></i>
-              Sign in
-            </button>
-          </form>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-start">
+                <i className="fas fa-exclamation-circle mt-0.5 mr-2"></i>
+                <span>{error}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  <i className="fas fa-envelope text-gray-400 mr-2"></i>
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-500"
+                  placeholder="your@email.com"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  <i className="fas fa-lock text-gray-400 mr-2"></i>
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-500"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="remember"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="remember" className="ml-2 block text-xs text-gray-700">
+                    Remember me
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition duration-200 flex items-center justify-center"
+              >
+                {isLoading ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin mr-2"></i>
+                    Signing in...
+                  </>
+                ) : (
+                  <>
+                    
+                    Sign In
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </div>

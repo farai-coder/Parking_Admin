@@ -10,89 +10,39 @@ interface Reservation {
     id: string;
     user_id: string;
     user_name: string;
-    user_type: 'student' | 'staff' | 'visitor' | 'admin';
-    spot_id: number;
+    user_type: 'student' | 'staff' | 'visitor' | 'admin' | 'vip';
+    spot_id: string;
     spot_name: string;
     spot_type: 'student' | 'visitor' | 'staff' | 'disabled';
     start_time: Date;
     end_time: Date;
-    status: 'confirmed' | 'pending' | 'cancelled' | 'completed';
+    status: 'active' | 'pending' | 'completed' | 'cancelled';
     created_at: Date;
     license_plate: string;
+    event_id?: string;
+}
+
+interface ReservationStatusCount {
+    status: string;
+    reservation_count: number;
+    distinct_spot_count: number;
+}
+
+interface SpotDistribution {
+    student: number;
+    staff: number;
+    visitor: number;
+    vip: number;
+}
+
+interface DailyReservationCount {
+    [status: string]: {
+        [date: string]: number;
+    };
 }
 
 export const ReservationsDashboard: React.FC = () => {
-    // Mock reservations data
-    const generateMockReservations = (): Reservation[] => {
-        const spots = [
-            { id: 101, name: 'A-101', type: 'staff' },
-            { id: 102, name: 'A-102', type: 'staff' },
-            { id: 201, name: 'B-201', type: 'student' },
-            { id: 202, name: 'B-202', type: 'student' },
-            { id: 301, name: 'C-301', type: 'visitor' },
-            { id: 401, name: 'D-401', type: 'disabled' }
-        ];
-
-        const users = [
-            { id: 'u1', name: 'John Smith', type: 'staff', license: 'STAFF001' },
-            { id: 'u2', name: 'Sarah Johnson', type: 'staff', license: 'STAFF002' },
-            { id: 'u3', name: 'Alex Chen', type: 'student', license: 'STU2023' },
-            { id: 'u4', name: 'Visitor 1', type: 'visitor', license: 'VIST001' }
-        ];
-
-        const reservations: Reservation[] = [];
-        const now = new Date();
-
-        // Generate daily reservations for the past week and next week
-        for (let i = -7; i <= 7; i++) {
-            const date = new Date(now);
-            date.setDate(now.getDate() + i);
-
-            // Skip weekends
-            if (date.getDay() === 0 || date.getDay() === 6) continue;
-
-            // Create 2-4 reservations per day
-            const reservationsCount = 2 + Math.floor(Math.random() * 3);
-
-            for (let j = 0; j < reservationsCount; j++) {
-                const hour = 8 + Math.floor(Math.random() * 8); // 8AM - 4PM start
-                const duration = 1 + Math.floor(Math.random() * 4); // 1-4 hours
-
-                const start = new Date(date);
-                start.setHours(hour, 0, 0, 0);
-
-                const end = new Date(start);
-                end.setHours(start.getHours() + duration);
-
-                const spot = spots[Math.floor(Math.random() * spots.length)];
-                const user = users[Math.floor(Math.random() * users.length)];
-
-                // Make sure visitor uses visitor spot
-                const suitableSpot = user.type === 'visitor'
-                    ? spots.find(s => s.type === 'visitor') || spot
-                    : spot;
-
-                reservations.push({
-                    id: `res-${date.getDate()}-${j}`,
-                    user_id: user.id,
-                    user_name: user.name,
-                    user_type: user.type as any,
-                    spot_id: suitableSpot.id,
-                    spot_name: suitableSpot.name,
-                    spot_type: suitableSpot.type as any,
-                    start_time: new Date(start),
-                    end_time: new Date(end),
-                    status: ['confirmed', 'pending', 'completed', 'cancelled'][Math.floor(Math.random() * 4)] as any,
-                    created_at: new Date(date),
-                    license_plate: user.license
-                });
-            }
-        }
-
-        return reservations;
-    };
-
-    const [reservations, setReservations] = useState<Reservation[]>(generateMockReservations());
+    const [reservations, setReservations] = useState<Reservation[]>([]);
     const [filter, setFilter] = useState({
         status: 'all',
         userType: 'all',
@@ -100,24 +50,132 @@ export const ReservationsDashboard: React.FC = () => {
         dateRange: 'week'
     });
     const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
-
-    // Filter reservations based on current filters
-    const filteredReservations = reservations.filter(res => {
-        return (
-            (filter.status === 'all' || res.status === filter.status) &&
-            (filter.userType === 'all' || res.user_type === filter.userType) &&
-            (filter.spotType === 'all' || res.spot_type === filter.spotType) &&
-            (filter.dateRange === 'all' ||
-                (filter.dateRange === 'week' &&
-                    res.start_time >= new Date(new Date().setDate(new Date().getDate() - 7)) &&
-                    res.start_time <= new Date(new Date().setDate(new Date().getDate() + 7))) ||
-                (filter.dateRange === 'today' &&
-                    res.start_time.toDateString() === new Date().toDateString()))
-        );
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [newReservation, setNewReservation] = useState({
+        user_id: '',
+        spot_id: '',
+        event_id: '',
+        start_time: '',
+        end_time: ''
     });
+    const [loading, setLoading] = useState(false);
+    const [stats, setStats] = useState({
+        totalReservations: 0,
+        activeReservations: 0,
+        spotDistribution: {
+            student: 0,
+            staff: 0,
+            visitor: 0,
+            vip: 0
+        },
+        reservationStatusCounts: [] as ReservationStatusCount[],
+        dailyReservationCounts: {} as DailyReservationCount
+    });
+
+    // Fetch all data
+    useEffect(() => {
+        const fetchData = async () => {
+            setLoading(true);
+            try {
+                // Fetch reservations details
+                const reservationsResponse = await fetch('http://localhost:8000/reservations/details', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const reservationsData = await reservationsResponse.json();
+                setReservations(reservationsData.map((r: any) => ({
+                    ...r,
+                    start_time: new Date(r.start_time),
+                    end_time: new Date(r.end_time),
+                    created_at: new Date(r.created_at || r.start_time),
+                    user_name: 'User ' + r.user_id.slice(0, 4), // Mock user name
+                    spot_name: 'Spot ' + r.spot_id.slice(0, 4), // Mock spot name
+                    license_plate: 'PLATE' + r.user_id.slice(0, 4), // Mock license plate
+                    user_type: ['student', 'staff', 'visitor', 'vip'][Math.floor(Math.random() * 4)] as any // Mock user type
+                })));
+
+                // Fetch statistics
+                const totalReservationsResponse = await fetch('http://localhost:8000/analytics/reservations_count', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const totalReservations = await totalReservationsResponse.json();
+
+                const activeReservationsResponse = await fetch('http://localhost:8000/analytics/active_reservations_count', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const activeReservations = await activeReservationsResponse.json();
+
+                const spotDistributionResponse = await fetch('http://localhost:8000/analytics/users/spot_distribution_by_role', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const spotDistribution = await spotDistributionResponse.json();
+
+                const reservationStatusCountResponse = await fetch('http://localhost:8000/analytics/reservation_status_count', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const reservationStatusCounts = await reservationStatusCountResponse.json();
+
+                const dailyReservationCountResponse = await fetch('http://localhost:8000/analytics/reservation_status_daily_count', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const dailyReservationCounts = await dailyReservationCountResponse.json();
+
+                setStats({
+                    totalReservations,
+                    activeReservations,
+                    spotDistribution,
+                    reservationStatusCounts,
+                    dailyReservationCounts
+                });
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, []);
+
+    const now = new Date();
+    const weekAgo = new Date();
+    weekAgo.setDate(now.getDate() - 7);
+
+    const filteredReservations = reservations.filter(res => {
+        const startTime = res.start_time instanceof Date ? res.start_time : new Date(res.start_time);
+
+        const statusMatch = filter.status === 'all' || res.status === filter.status;
+        const userTypeMatch = filter.userType === 'all' || res.user_type === filter.userType;
+        const spotTypeMatch = filter.spotType === 'all' || res.spot_type === filter.spotType;
+
+        let dateMatch = false;
+        if (filter.dateRange === 'all') {
+            dateMatch = true;
+        } else if (filter.dateRange === 'week') {
+            dateMatch = startTime >= weekAgo && startTime <= now;
+        } else if (filter.dateRange === 'today') {
+            dateMatch = startTime.toDateString() === now.toDateString();
+        }
+
+        return statusMatch && userTypeMatch && spotTypeMatch && dateMatch;
+    });
+
 
     // Initialize charts
     useEffect(() => {
+        if (loading || !stats.reservationStatusCounts.length) return;
+
         const initCharts = () => {
             // Reservation Status Chart
             const statusChart = echarts.init(document.getElementById('reservationStatusChart'));
@@ -142,7 +200,7 @@ export const ReservationsDashboard: React.FC = () => {
                 legend: {
                     orient: 'horizontal',
                     bottom: 0,
-                    data: ['Confirmed', 'Pending', 'Completed', 'Cancelled']
+                    data: stats.reservationStatusCounts.map(item => item.status)
                 },
                 series: [
                     {
@@ -168,28 +226,15 @@ export const ReservationsDashboard: React.FC = () => {
                         labelLine: {
                             show: false
                         },
-                        data: [
-                            {
-                                value: reservations.filter(r => r.status === 'confirmed').length,
-                                name: 'Confirmed',
-                                itemStyle: { color: '#3B82F6' }
-                            },
-                            {
-                                value: reservations.filter(r => r.status === 'pending').length,
-                                name: 'Pending',
-                                itemStyle: { color: '#F59E0B' }
-                            },
-                            {
-                                value: reservations.filter(r => r.status === 'completed').length,
-                                name: 'Completed',
-                                itemStyle: { color: '#10B981' }
-                            },
-                            {
-                                value: reservations.filter(r => r.status === 'cancelled').length,
-                                name: 'Cancelled',
-                                itemStyle: { color: '#EF4444' }
+                        data: stats.reservationStatusCounts.map(item => ({
+                            value: item.reservation_count,
+                            name: item.status,
+                            itemStyle: {
+                                color: item.status === 'active' ? '#3B82F6' :
+                                    item.status === 'pending' ? '#F59E0B' :
+                                        item.status === 'completed' ? '#10B981' : '#EF4444'
                             }
-                        ]
+                        }))
                     }
                 ]
             };
@@ -205,68 +250,29 @@ export const ReservationsDashboard: React.FC = () => {
                     trigger: 'axis'
                 },
                 legend: {
-                    data: ['Confirmed', 'Completed', 'Cancelled'],
+                    data: Object.keys(stats.dailyReservationCounts),
                     bottom: 0
                 },
                 xAxis: {
                     type: 'category',
-                    data: Array.from({ length: 14 }, (_, i) => {
-                        const date = new Date();
-                        date.setDate(date.getDate() - 7 + i);
-                        return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                    })
+                    data: Object.keys(stats.dailyReservationCounts[Object.keys(stats.dailyReservationCounts)[0]])
                 },
                 yAxis: {
                     type: 'value',
                     name: 'Reservations'
                 },
-                series: [
-                    {
-                        name: 'Confirmed',
-                        type: 'line',
-                        smooth: true,
-                        data: Array.from({ length: 14 }, (_, i) => {
-                            const date = new Date();
-                            date.setDate(date.getDate() - 7 + i);
-                            return reservations.filter(r =>
-                                r.status === 'confirmed' &&
-                                r.start_time.toDateString() === date.toDateString()
-                            ).length;
-                        }),
-                        lineStyle: { width: 3 },
-                        itemStyle: { color: '#3B82F6' }
-                    },
-                    {
-                        name: 'Completed',
-                        type: 'line',
-                        smooth: true,
-                        data: Array.from({ length: 14 }, (_, i) => {
-                            const date = new Date();
-                            date.setDate(date.getDate() - 7 + i);
-                            return reservations.filter(r =>
-                                r.status === 'completed' &&
-                                r.start_time.toDateString() === date.toDateString()
-                            ).length;
-                        }),
-                        lineStyle: { width: 3 },
-                        itemStyle: { color: '#10B981' }
-                    },
-                    {
-                        name: 'Cancelled',
-                        type: 'line',
-                        smooth: true,
-                        data: Array.from({ length: 14 }, (_, i) => {
-                            const date = new Date();
-                            date.setDate(date.getDate() - 7 + i);
-                            return reservations.filter(r =>
-                                r.status === 'cancelled' &&
-                                r.start_time.toDateString() === date.toDateString()
-                            ).length;
-                        }),
-                        lineStyle: { width: 3 },
-                        itemStyle: { color: '#EF4444' }
+                series: Object.entries(stats.dailyReservationCounts).map(([status, data]) => ({
+                    name: status,
+                    type: 'line',
+                    smooth: true,
+                    data: Object.values(data),
+                    lineStyle: { width: 3 },
+                    itemStyle: {
+                        color: status === 'active' ? '#3B82F6' :
+                            status === 'pending' ? '#F59E0B' :
+                                status === 'completed' ? '#10B981' : '#EF4444'
                     }
-                ]
+                }))
             };
 
             // Utilization Chart Options
@@ -287,7 +293,7 @@ export const ReservationsDashboard: React.FC = () => {
                 },
                 xAxis: {
                     type: 'category',
-                    data: ['Staff', 'Student', 'Visitor', 'Disabled']
+                    data: ['Student', 'Staff', 'Visitor', 'VIP']
                 },
                 yAxis: {
                     type: 'value',
@@ -298,10 +304,10 @@ export const ReservationsDashboard: React.FC = () => {
                         name: 'Reservations',
                         type: 'bar',
                         data: [
-                            reservations.filter(r => r.spot_type === 'staff').length,
-                            reservations.filter(r => r.spot_type === 'student').length,
-                            reservations.filter(r => r.spot_type === 'visitor').length,
-                            reservations.filter(r => r.spot_type === 'disabled').length
+                            stats.spotDistribution.student,
+                            stats.spotDistribution.staff,
+                            stats.spotDistribution.visitor,
+                            stats.spotDistribution.vip
                         ],
                         itemStyle: {
                             color: function (params: any) {
@@ -326,7 +332,7 @@ export const ReservationsDashboard: React.FC = () => {
         };
 
         initCharts();
-    }, [reservations]);
+    }, [loading, stats]);
 
     // Calendar events for react-big-calendar
     const calendarEvents = filteredReservations.map(res => ({
@@ -344,7 +350,7 @@ export const ReservationsDashboard: React.FC = () => {
         let borderColor = '';
 
         switch (event.status) {
-            case 'confirmed':
+            case 'active':
                 backgroundColor = '#BFDBFE';
                 borderColor = '#3B82F6';
                 break;
@@ -381,13 +387,61 @@ export const ReservationsDashboard: React.FC = () => {
         if (reservation) setSelectedReservation(reservation);
     };
 
-    const updateReservationStatus = (id: string, status: string) => {
-        setReservations(prev =>
-            prev.map(res =>
-                res.id === id ? { ...res, status: status as any } : res
-            )
-        );
-        setSelectedReservation(null);
+    const updateReservationStatus = async (id: string, status: string) => {
+        try {
+            // In a real app, you would call an API to update the status
+            // For now, we'll just update the local state
+            setReservations(prev =>
+                prev.map(res =>
+                    res.id === id ? { ...res, status: status as any } : res
+                )
+            );
+            setSelectedReservation(null);
+        } catch (error) {
+            console.error('Error updating reservation status:', error);
+        }
+    };
+
+    const handleCreateReservation = async () => {
+        try {
+            const response = await fetch('http://localhost:8000/reservations/reserve-spot', {
+                method: 'POST',
+                headers: {
+                    'accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(newReservation)
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to create reservation');
+            }
+
+            const createdReservation = await response.json();
+
+            // Add the new reservation to our local state
+            setReservations(prev => [...prev, {
+                ...createdReservation,
+                start_time: new Date(createdReservation.start_time),
+                end_time: new Date(createdReservation.end_time),
+                created_at: new Date(),
+                user_name: 'User ' + createdReservation.user_id.slice(0, 4),
+                spot_name: 'Spot ' + createdReservation.spot_id.slice(0, 4),
+                license_plate: 'PLATE' + createdReservation.user_id.slice(0, 4),
+                user_type: ['student', 'staff', 'visitor', 'vip'][Math.floor(Math.random() * 4)] as any
+            }]);
+
+            setShowCreateModal(false);
+            setNewReservation({
+                user_id: '',
+                spot_id: '',
+                event_id: '',
+                start_time: '',
+                end_time: ''
+            });
+        } catch (error) {
+            console.error('Error creating reservation:', error);
+        }
     };
 
     return (
@@ -403,7 +457,7 @@ export const ReservationsDashboard: React.FC = () => {
                             onChange={(e) => setFilter({ ...filter, status: e.target.value })}
                         >
                             <option value="all">All Statuses</option>
-                            <option value="confirmed">Confirmed</option>
+                            <option value="active">Active</option>
                             <option value="pending">Pending</option>
                             <option value="completed">Completed</option>
                             <option value="cancelled">Cancelled</option>
@@ -421,7 +475,7 @@ export const ReservationsDashboard: React.FC = () => {
                             <option value="student">Student</option>
                             <option value="staff">Staff</option>
                             <option value="visitor">Visitor</option>
-                            <option value="admin">Admin</option>
+                            <option value="vip">VIP</option>
                         </select>
                     </div>
 
@@ -474,7 +528,7 @@ export const ReservationsDashboard: React.FC = () => {
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Total Reservations</h3>
-                        <span className="text-2xl font-bold text-blue-600">{reservations.length}</span>
+                        <span className="text-2xl font-bold text-blue-600">{stats.totalReservations}</span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
                         {filteredReservations.length} match filters
@@ -485,10 +539,7 @@ export const ReservationsDashboard: React.FC = () => {
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Active Today</h3>
                         <span className="text-2xl font-bold text-green-600">
-                            {reservations.filter(r =>
-                                r.start_time.toDateString() === new Date().toDateString() &&
-                                r.status === 'confirmed'
-                            ).length}
+                            {stats.activeReservations}
                         </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
@@ -503,7 +554,7 @@ export const ReservationsDashboard: React.FC = () => {
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Pending Approval</h3>
                         <span className="text-2xl font-bold text-orange-600">
-                            {reservations.filter(r => r.status === 'pending').length}
+                            {stats.reservationStatusCounts.find(s => s.status === 'pending')?.reservation_count || 0}
                         </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
@@ -518,14 +569,17 @@ export const ReservationsDashboard: React.FC = () => {
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Cancellation Rate</h3>
                         <span className="text-2xl font-bold text-purple-600">
-                            {Math.round(
-                                (reservations.filter(r => r.status === 'cancelled').length /
-                                    reservations.length) * 100
-                            )}%
+                            {stats.totalReservations > 0
+                                ? Math.round(
+                                    ((stats.reservationStatusCounts.find(s => s.status === 'cancelled')?.reservation_count || 0) /
+                                        stats.totalReservations) * 100
+                                )
+                                : 0}%
+
                         </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                        {reservations.filter(r => r.status === 'cancelled').length} total cancellations
+                        {stats.reservationStatusCounts.find(s => s.status === 'cancelled')?.reservation_count || 0} total cancellations
                     </p>
                 </div>
             </div>
@@ -543,26 +597,6 @@ export const ReservationsDashboard: React.FC = () => {
                 </div>
             </div>
 
-            {/* Calendar View */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-                <div className="p-6 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold text-gray-800">Reservation Calendar</h3>
-                </div>
-                <div className="p-4" style={{ height: '500px' }}>
-                    <Calendar
-                        localizer={localizer}
-                        events={calendarEvents}
-                        startAccessor="start"
-                        endAccessor="end"
-                        defaultView="week"
-                        views={['day', 'week', 'work_week']}
-                        eventPropGetter={eventStyleGetter}
-                        onSelectEvent={handleSelectEvent}
-                        style={{ height: '100%' }}
-                    />
-                </div>
-            </div>
-
             {/* Reservations Table */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-100">
                 <div className="p-6 border-b border-gray-200">
@@ -570,7 +604,10 @@ export const ReservationsDashboard: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-800">
                             Reservation Records ({filteredReservations.length})
                         </h3>
-                        <button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                        <button
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                            onClick={() => setShowCreateModal(true)}
+                        >
                             + New Reservation
                         </button>
                     </div>
@@ -610,10 +647,10 @@ export const ReservationsDashboard: React.FC = () => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 py-1 rounded text-xs font-medium capitalize ${res.status === 'confirmed' ? 'bg-blue-100 text-blue-800' :
-                                                res.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                                    res.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                        'bg-red-100 text-red-800'
+                                        <span className={`px-2 py-1 rounded text-xs font-medium capitalize ${res.status === 'active' ? 'bg-blue-100 text-blue-800' :
+                                            res.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                                res.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                                    'bg-red-100 text-red-800'
                                             }`}>
                                             {res.status}
                                         </span>
@@ -669,10 +706,10 @@ export const ReservationsDashboard: React.FC = () => {
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-gray-600">Status:</span>
-                                        <span className={`px-2 py-1 rounded text-xs font-medium ${selectedReservation.status === 'confirmed' ? 'bg-blue-100 text-blue-800' :
-                                                selectedReservation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                                    selectedReservation.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                                        'bg-red-100 text-red-800'
+                                        <span className={`px-2 py-1 rounded text-xs font-medium ${selectedReservation.status === 'active' ? 'bg-blue-100 text-blue-800' :
+                                            selectedReservation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                                selectedReservation.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                                    'bg-red-100 text-red-800'
                                             }`}>
                                             {selectedReservation.status}
                                         </span>
@@ -721,10 +758,10 @@ export const ReservationsDashboard: React.FC = () => {
                         <div className="p-6 border-t border-gray-200">
                             <h4 className="font-medium text-gray-900 mb-3">Actions</h4>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                {selectedReservation.status !== 'confirmed' && (
+                                {selectedReservation.status !== 'active' && (
                                     <button
                                         className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                                        onClick={() => updateReservationStatus(selectedReservation.id, 'confirmed')}
+                                        onClick={() => updateReservationStatus(selectedReservation.id, 'active')}
                                     >
                                         Confirm
                                     </button>
@@ -754,6 +791,94 @@ export const ReservationsDashboard: React.FC = () => {
                                     Edit Details
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Create Reservation Modal */}
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+                        <div className="p-6 border-b border-gray-200">
+                            <div className="flex justify-between items-center">
+                                <h3 className="text-lg font-semibold text-gray-800">
+                                    Create New Reservation
+                                </h3>
+                                <button
+                                    className="text-gray-500 hover:text-gray-700"
+                                    onClick={() => setShowCreateModal(false)}
+                                >
+                                    <i className="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
+                                <input
+                                    type="text"
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    value={newReservation.user_id}
+                                    onChange={(e) => setNewReservation({ ...newReservation, user_id: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Spot ID</label>
+                                <input
+                                    type="text"
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    value={newReservation.spot_id}
+                                    onChange={(e) => setNewReservation({ ...newReservation, spot_id: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Event ID (Optional)</label>
+                                <input
+                                    type="text"
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    value={newReservation.event_id}
+                                    onChange={(e) => setNewReservation({ ...newReservation, event_id: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                                <input
+                                    type="datetime-local"
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    value={newReservation.start_time}
+                                    onChange={(e) => setNewReservation({ ...newReservation, start_time: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                                <input
+                                    type="datetime-local"
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    value={newReservation.end_time}
+                                    onChange={(e) => setNewReservation({ ...newReservation, end_time: e.target.value })}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+                            <button
+                                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                                onClick={() => setShowCreateModal(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                                onClick={handleCreateReservation}
+                            >
+                                Create Reservation
+                            </button>
                         </div>
                     </div>
                 </div>

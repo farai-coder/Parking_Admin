@@ -3,6 +3,7 @@ import * as echarts from 'echarts';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import axios from 'axios';
 
 const localizer = momentLocalizer(moment);
 
@@ -10,135 +11,166 @@ interface Event {
     id: string;
     name: string;
     description: string;
-    start_time: Date;
-    end_time: Date;
-    location: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    event_location: string;
+    latitude: number;
+    longitude: number;
+    allowed_parking_lots: any[];
     event_type: 'academic' | 'sports' | 'cultural' | 'official';
-    attendees: number;
-    parking_spots_reserved: number;
-    status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
-    organizer: string;
-    contact_email: string;
+    status?: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
+}
+
+interface NewEventFormData {
+    name: string;
+    description: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    event_location: string;
+    latitude: number;
+    longitude: number;
+    allowed_parking_lots: any[];
+    event_type: 'academic' | 'sports' | 'cultural' | 'official';
 }
 
 export const EventsDashboard: React.FC = () => {
-    // Mock events data
-    const generateMockEvents = (): Event[] => {
-        const eventTypes: ('academic' | 'sports' | 'cultural' | 'official')[] = [
-            'academic', 'sports', 'cultural', 'official'
-        ];
-
-        const organizers = [
-            'University Administration',
-            'Student Union',
-            'Sports Department',
-            'Cultural Committee'
-        ];
-
-        const locations = [
-            'Main Auditorium',
-            'Sports Complex',
-            'Central Quad',
-            'Library Hall',
-            'East Campus Grounds'
-        ];
-
-        const events: Event[] = [];
-        const now = new Date();
-
-        // Generate events for the past month and next 3 months
-        for (let i = -30; i <= 90; i += Math.floor(3 + Math.random() * 5)) {
-            const date = new Date(now);
-            date.setDate(now.getDate() + i);
-
-            // Skip some days randomly
-            if (Math.random() > 0.7) continue;
-
-            const durationHours = 1 + Math.floor(Math.random() * 5);
-            const start = new Date(date);
-            start.setHours(9 + Math.floor(Math.random() * 8), 0, 0, 0); // 9AM-5PM start
-
-            const end = new Date(start);
-            end.setHours(start.getHours() + durationHours);
-
-            const eventType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
-            const attendees = 50 + Math.floor(Math.random() * 500);
-            const spotsReserved = Math.floor(attendees * (0.1 + Math.random() * 0.2));
-
-            events.push({
-                id: `event-${date.getDate()}-${Math.floor(Math.random() * 1000)}`,
-                name: `${eventType.charAt(0).toUpperCase() + eventType.slice(1)} Event ${i > 0 ? i : -i}`,
-                description: `This is a ${eventType} event happening at ${locations[Math.floor(Math.random() * locations.length)]}`,
-                start_time: new Date(start),
-                end_time: new Date(end),
-                location: locations[Math.floor(Math.random() * locations.length)],
-                event_type: eventType,
-                attendees: attendees,
-                parking_spots_reserved: spotsReserved,
-                status: i < 0 ? 'completed' : (i === 0 ? 'ongoing' : 'upcoming'),
-                organizer: organizers[Math.floor(Math.random() * organizers.length)],
-                contact_email: `contact@${eventType}-events.edu`
-            });
-        }
-
-        // Add a cancelled event
-        events.push({
-            id: 'event-cancelled',
-            name: 'Cancelled Sports Event',
-            description: 'This event was cancelled due to weather conditions',
-            start_time: new Date(new Date().setDate(new Date().getDate() + 2)),
-            end_time: new Date(new Date().setDate(new Date().getDate() + 2)),
-            location: 'Sports Field',
-            event_type: 'sports',
-            attendees: 0,
-            parking_spots_reserved: 0,
-            status: 'cancelled',
-            organizer: 'Sports Department',
-            contact_email: 'sports@university.edu'
-        });
-
-        return events;
-    };
-
-    const [events, setEvents] = useState<Event[]>(generateMockEvents());
+    const [events, setEvents] = useState<Event[]>([]);
     const [filter, setFilter] = useState({
         status: 'all',
         eventType: 'all',
         timeRange: 'month'
     });
     const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [newEvent, setNewEvent] = useState<NewEventFormData>({
+        name: '',
+        description: '',
+        date: new Date().toISOString().split('T')[0],
+        start_time: '09:00',
+        end_time: '17:00',
+        event_location: '',
+        latitude: 0,
+        longitude: 0,
+        allowed_parking_lots: [],
+        event_type: 'academic'
+    });
+    const [stats, setStats] = useState({
+        total_events: 0,
+        type_distribution: {
+            academic: 0,
+            sports: 0,
+            cultural: 0,
+            official: 0
+        },
+        monthly_trend: {
+            months: [] as string[],
+            academic: [] as number[],
+            sports: [] as number[],
+            cultural: [] as number[],
+            official: [] as number[]
+        },
+        weekly_distribution: {} as Record<string, any>
+    });
 
-    // Filter events based on current filters
+    // Fetch data from APIs
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                // Fetch events
+                const eventsResponse = await axios.get('http://localhost:8000/events/');
+                const eventsWithStatus = eventsResponse.data.map((event: any) => ({
+                    ...event,
+                    status: getEventStatus(event)
+                }));
+                setEvents(eventsWithStatus);
+
+                // Fetch statistics
+                const totalEventsResponse = await axios.get('http://localhost:8000/analytics/api/analytics/events/count');
+                const typeDistributionResponse = await axios.get('http://localhost:8000/analytics/api/analytics/events/distribution_by_type');
+                const monthlyTrendResponse = await axios.get('http://localhost:8000/analytics/api/analytics/events/trend_by_month');
+                const weeklyDistributionResponse = await axios.get('http://localhost:8000/analytics/api/analytics/events/distribution_by_week');
+
+                setStats({
+                    total_events: totalEventsResponse.data.total_events,
+                    type_distribution: typeDistributionResponse.data,
+                    monthly_trend: monthlyTrendResponse.data,
+                    weekly_distribution: weeklyDistributionResponse.data
+                });
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        };
+
+        fetchData();
+    }, []);
+
+    // Determine event status based on dates
+    const getEventStatus = (event: Event): 'upcoming' | 'ongoing' | 'completed' | 'cancelled' => {
+        const now = new Date();
+        const startDate = new Date(event.start_time);
+        const endDate = new Date(event.end_time);
+
+        // For simplicity, we'll assume no events are cancelled in this implementation
+        if (now < startDate) return 'upcoming';
+        if (now >= startDate && now <= endDate) return 'ongoing';
+        return 'completed';
+    };
+
     const filteredEvents = events.filter(event => {
         const now = new Date();
+
+        const eventDate = new Date(event.start_time);
+
+        // Calculate start and end of current week (Monday to Sunday)
+        // JS: getDay() Sunday=0 ... Saturday=6
+        const dayOfWeek = now.getDay();
+        // Monday is 1, so if Sunday(0), treat as 7 for calculation
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const weekStart = new Date(now);
+        weekStart.setHours(0, 0, 0, 0);
+        weekStart.setDate(now.getDate() + mondayOffset);
+
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
+
+        // Start and end of current month
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        // Start and end of today
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(now);
+        todayEnd.setHours(23, 59, 59, 999);
+
         return (
             (filter.status === 'all' || event.status === filter.status) &&
             (filter.eventType === 'all' || event.event_type === filter.eventType) &&
             (filter.timeRange === 'all' ||
                 (filter.timeRange === 'month' &&
-                    event.start_time >= new Date(now.getFullYear(), now.getMonth(), 1) &&
-                    event.start_time <= new Date(now.getFullYear(), now.getMonth() + 1, 0)) ||
+                    eventDate >= monthStart &&
+                    eventDate <= monthEnd) ||
                 (filter.timeRange === 'week' &&
-                    event.start_time >= new Date(now.setDate(now.getDate() - now.getDay())) &&
-                    event.start_time <= new Date(now.setDate(now.getDate() - now.getDay() + 6))) ||
+                    eventDate >= weekStart &&
+                    eventDate <= weekEnd) ||
                 (filter.timeRange === 'today' &&
-                    event.start_time.toDateString() === new Date().toDateString()))
+                    eventDate >= todayStart &&
+                    eventDate <= todayEnd)
+            )
         );
     });
 
+
     // Initialize charts
     useEffect(() => {
+        if (!stats.monthly_trend.months.length) return;
+
         const initCharts = () => {
             // Event Type Distribution Chart
             const typeChart = echarts.init(document.getElementById('eventTypeChart'));
-
-            // Monthly Event Trend Chart
-            const trendChart = echarts.init(document.getElementById('eventTrendChart'));
-
-            // Parking Demand Chart
-            const demandChart = echarts.init(document.getElementById('parkingDemandChart'));
-
-            // Type Chart Options
             const typeOptions = {
                 title: {
                     text: 'Event Type Distribution',
@@ -180,22 +212,22 @@ export const EventsDashboard: React.FC = () => {
                         },
                         data: [
                             {
-                                value: events.filter(e => e.event_type === 'academic').length,
+                                value: stats.type_distribution.academic,
                                 name: 'Academic',
                                 itemStyle: { color: '#3B82F6' }
                             },
                             {
-                                value: events.filter(e => e.event_type === 'sports').length,
+                                value: stats.type_distribution.sports,
                                 name: 'Sports',
                                 itemStyle: { color: '#10B981' }
                             },
                             {
-                                value: events.filter(e => e.event_type === 'cultural').length,
+                                value: stats.type_distribution.cultural,
                                 name: 'Cultural',
                                 itemStyle: { color: '#F59E0B' }
                             },
                             {
-                                value: events.filter(e => e.event_type === 'official').length,
+                                value: stats.type_distribution.official,
                                 name: 'Official',
                                 itemStyle: { color: '#8B5CF6' }
                             }
@@ -204,7 +236,8 @@ export const EventsDashboard: React.FC = () => {
                 ]
             };
 
-            // Trend Chart Options
+            // Monthly Event Trend Chart
+            const trendChart = echarts.init(document.getElementById('eventTrendChart'));
             const trendOptions = {
                 title: {
                     text: 'Monthly Event Trend',
@@ -220,11 +253,7 @@ export const EventsDashboard: React.FC = () => {
                 },
                 xAxis: {
                     type: 'category',
-                    data: Array.from({ length: 12 }, (_, i) => {
-                        const date = new Date();
-                        date.setMonth(date.getMonth() - 6 + i);
-                        return date.toLocaleDateString('en-US', { month: 'short' });
-                    }).slice(0, 6)
+                    data: stats.monthly_trend.months
                 },
                 yAxis: {
                     type: 'value',
@@ -235,12 +264,7 @@ export const EventsDashboard: React.FC = () => {
                         name: 'Academic',
                         type: 'line',
                         smooth: true,
-                        data: Array.from({ length: 6 }, (_, i) =>
-                            events.filter(e =>
-                                e.event_type === 'academic' &&
-                                new Date(e.start_time).getMonth() === (new Date().getMonth() - 5 + i) % 12
-                            ).length
-                        ),
+                        data: stats.monthly_trend.academic,
                         lineStyle: { width: 3 },
                         itemStyle: { color: '#3B82F6' }
                     },
@@ -248,12 +272,7 @@ export const EventsDashboard: React.FC = () => {
                         name: 'Sports',
                         type: 'line',
                         smooth: true,
-                        data: Array.from({ length: 6 }, (_, i) =>
-                            events.filter(e =>
-                                e.event_type === 'sports' &&
-                                new Date(e.start_time).getMonth() === (new Date().getMonth() - 5 + i) % 12
-                            ).length
-                        ),
+                        data: stats.monthly_trend.sports,
                         lineStyle: { width: 3 },
                         itemStyle: { color: '#10B981' }
                     },
@@ -261,12 +280,7 @@ export const EventsDashboard: React.FC = () => {
                         name: 'Cultural',
                         type: 'line',
                         smooth: true,
-                        data: Array.from({ length: 6 }, (_, i) =>
-                            events.filter(e =>
-                                e.event_type === 'cultural' &&
-                                new Date(e.start_time).getMonth() === (new Date().getMonth() - 5 + i) % 12
-                            ).length
-                        ),
+                        data: stats.monthly_trend.cultural,
                         lineStyle: { width: 3 },
                         itemStyle: { color: '#F59E0B' }
                     },
@@ -274,19 +288,15 @@ export const EventsDashboard: React.FC = () => {
                         name: 'Official',
                         type: 'line',
                         smooth: true,
-                        data: Array.from({ length: 6 }, (_, i) =>
-                            events.filter(e =>
-                                e.event_type === 'official' &&
-                                new Date(e.start_time).getMonth() === (new Date().getMonth() - 5 + i) % 12
-                            ).length
-                        ),
+                        data: stats.monthly_trend.official,
                         lineStyle: { width: 3 },
                         itemStyle: { color: '#8B5CF6' }
                     }
                 ]
             };
 
-            // Demand Chart Options
+            // Parking Demand Chart (using type distribution as proxy)
+            const demandChart = echarts.init(document.getElementById('parkingDemandChart'));
             const demandOptions = {
                 title: {
                     text: 'Parking Demand by Event Type',
@@ -308,42 +318,21 @@ export const EventsDashboard: React.FC = () => {
                 },
                 yAxis: {
                     type: 'value',
-                    name: 'Parking Spots Reserved'
+                    name: 'Number of Events'
                 },
                 series: [
                     {
-                        name: 'Average Spots Reserved',
+                        name: 'Events',
                         type: 'bar',
                         data: [
-                            Math.round(events.filter(e => e.event_type === 'academic').reduce((sum, e) => sum + e.parking_spots_reserved, 0) /
-                                Math.max(1, events.filter(e => e.event_type === 'academic').length)),
-                            Math.round(events.filter(e => e.event_type === 'sports').reduce((sum, e) => sum + e.parking_spots_reserved, 0) /
-                                Math.max(1, events.filter(e => e.event_type === 'sports').length)),
-                            Math.round(events.filter(e => e.event_type === 'cultural').reduce((sum, e) => sum + e.parking_spots_reserved, 0) /
-                                Math.max(1, events.filter(e => e.event_type === 'cultural').length)),
-                            Math.round(events.filter(e => e.event_type === 'official').reduce((sum, e) => sum + e.parking_spots_reserved, 0) /
-                                Math.max(1, events.filter(e => e.event_type === 'official').length))
+                            stats.type_distribution.academic,
+                            stats.type_distribution.sports,
+                            stats.type_distribution.cultural,
+                            stats.type_distribution.official
                         ],
                         itemStyle: {
                             color: function (params: any) {
                                 const colors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'];
-                                return colors[params.dataIndex];
-                            },
-                            borderRadius: [4, 4, 0, 0]
-                        }
-                    },
-                    {
-                        name: 'Max Spots Reserved',
-                        type: 'bar',
-                        data: [
-                            Math.max(...events.filter(e => e.event_type === 'academic').map(e => e.parking_spots_reserved)),
-                            Math.max(...events.filter(e => e.event_type === 'sports').map(e => e.parking_spots_reserved)),
-                            Math.max(...events.filter(e => e.event_type === 'cultural').map(e => e.parking_spots_reserved)),
-                            Math.max(...events.filter(e => e.event_type === 'official').map(e => e.parking_spots_reserved))
-                        ],
-                        itemStyle: {
-                            color: function (params: any) {
-                                const colors = ['#60A5FA', '#34D399', '#FBBF24', '#A78BFA'];
                                 return colors[params.dataIndex];
                             },
                             borderRadius: [4, 4, 0, 0]
@@ -364,14 +353,14 @@ export const EventsDashboard: React.FC = () => {
         };
 
         initCharts();
-    }, [events, filter]);
+    }, [stats]);
 
     // Calendar events for react-big-calendar
     const calendarEvents = filteredEvents.map(event => ({
         id: event.id,
         title: event.name,
-        start: event.start_time,
-        end: event.end_time,
+        start: new Date(event.start_time),
+        end: new Date(event.end_time),
         status: event.status,
         eventType: event.event_type,
         allDay: false
@@ -408,7 +397,6 @@ export const EventsDashboard: React.FC = () => {
             borderColor = '#EF4444';
         } else if (event.status === 'ongoing') {
             borderColor = '#000000';
-            const borderWidth = '3px';
         }
 
         return {
@@ -435,6 +423,55 @@ export const EventsDashboard: React.FC = () => {
             )
         );
         setSelectedEvent(null);
+    };
+
+    const handleCreateEvent = async () => {
+        try {
+            // Format the date and times for the API
+            const formattedEvent = {
+                ...newEvent,
+                date: `${newEvent.date}T${newEvent.start_time}:00.000Z`,
+                start_time: `${newEvent.date}T${newEvent.start_time}:00.000Z`,
+                end_time: `${newEvent.date}T${newEvent.end_time}:00.000Z`
+            };
+
+            const response = await axios.post('http://localhost:8000/events/', formattedEvent, {
+                headers: {
+                    'accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            // Add the new event to the list with a status
+            const eventWithStatus = {
+                ...response.data,
+                status: getEventStatus(response.data)
+            };
+            setEvents([...events, eventWithStatus]);
+            setShowCreateModal(false);
+            setNewEvent({
+                name: '',
+                description: '',
+                date: new Date().toISOString().split('T')[0],
+                start_time: '09:00',
+                end_time: '17:00',
+                event_location: '',
+                latitude: 0,
+                longitude: 0,
+                allowed_parking_lots: [],
+                event_type: 'academic'
+            });
+        } catch (error) {
+            console.error('Error creating event:', error);
+        }
+    };
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setNewEvent(prev => ({
+            ...prev,
+            [name]: value
+        }));
     };
 
     return (
@@ -506,7 +543,7 @@ export const EventsDashboard: React.FC = () => {
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Total Events</h3>
-                        <span className="text-2xl font-bold text-blue-600">{events.length}</span>
+                        <span className="text-2xl font-bold text-blue-600">{stats.total_events}</span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
                         {filteredEvents.length} match filters
@@ -523,39 +560,32 @@ export const EventsDashboard: React.FC = () => {
                     <p className="text-sm text-gray-500 mt-2">
                         {events.filter(e =>
                             e.status === 'upcoming' &&
-                            e.start_time.toDateString() === new Date().toDateString()
+                            new Date(e.start_time).toDateString() === new Date().toDateString()
                         ).length} today
                     </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-gray-800">Parking Demand</h3>
+                        <h3 className="text-lg font-semibold text-gray-800">Event Types</h3>
                         <span className="text-2xl font-bold text-orange-600">
-                            {events.reduce((sum, e) => sum + e.parking_spots_reserved, 0)}
+                            {Object.keys(stats.type_distribution).length}
                         </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                        {Math.round(
-                            events.reduce((sum, e) => sum + e.parking_spots_reserved, 0) /
-                            Math.max(1, events.length)
-                        )} avg. per event
-
+                        {Object.entries(stats.type_distribution).map(([type, count]) => `${type}: ${count}`).join(', ')}
                     </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-gray-800">Cancellation Rate</h3>
+                        <h3 className="text-lg font-semibold text-gray-800">Monthly Trend</h3>
                         <span className="text-2xl font-bold text-purple-600">
-                            {Math.round(
-                                (events.filter(e => e.status === 'cancelled').length / Math.max(1, events.length)) * 100
-                            )}%
-
+                            {stats.monthly_trend.months.length} months
                         </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                        {events.filter(e => e.status === 'cancelled').length} cancelled events
+                        Current: {stats.monthly_trend.months[stats.monthly_trend.months.length - 1]}
                     </p>
                 </div>
             </div>
@@ -600,7 +630,10 @@ export const EventsDashboard: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-800">
                             Event Records ({filteredEvents.length})
                         </h3>
-                        <button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                        <button
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                            onClick={() => setShowCreateModal(true)}
+                        >
                             + New Event
                         </button>
                     </div>
@@ -613,7 +646,8 @@ export const EventsDashboard: React.FC = () => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date/Time</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Parking Reserved</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Parking Lots</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Coordinates</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -623,36 +657,39 @@ export const EventsDashboard: React.FC = () => {
                                 <tr key={event.id} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm font-medium text-gray-900">{event.name}</div>
-                                        <div className="text-sm text-gray-500">{event.organizer}</div>
+                                        <div className="text-sm text-gray-500 truncate max-w-xs">{event.description}</div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm text-gray-900">
-                                            {event.start_time.toLocaleDateString()}
+                                            {new Date(event.start_time).toLocaleDateString()}
                                         </div>
                                         <div className="text-sm text-gray-500">
-                                            {event.start_time.toLocaleTimeString()} - {event.end_time.toLocaleTimeString()}
+                                            {new Date(event.start_time).toLocaleTimeString()} - {new Date(event.end_time).toLocaleTimeString()}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {event.location}
+                                        {event.event_location}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 py-1 rounded text-xs font-medium capitalize ${event.event_type === 'academic' ? 'bg-blue-100 text-blue-800' :
-                                                event.event_type === 'sports' ? 'bg-green-100 text-green-800' :
-                                                    event.event_type === 'cultural' ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-purple-100 text-purple-800'
+                                            event.event_type === 'sports' ? 'bg-green-100 text-green-800' :
+                                                event.event_type === 'cultural' ? 'bg-yellow-100 text-yellow-800' :
+                                                    'bg-purple-100 text-purple-800'
                                             }`}>
                                             {event.event_type}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {event.parking_spots_reserved} spots
+                                        {event.allowed_parking_lots.length} lots
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        {event.latitude.toFixed(4)}, {event.longitude.toFixed(4)}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 py-1 rounded text-xs font-medium capitalize ${event.status === 'upcoming' ? 'bg-blue-100 text-blue-800' :
-                                                event.status === 'ongoing' ? 'bg-green-100 text-green-800' :
-                                                    event.status === 'completed' ? 'bg-gray-100 text-gray-800' :
-                                                        'bg-red-100 text-red-800'
+                                            event.status === 'ongoing' ? 'bg-green-100 text-green-800' :
+                                                event.status === 'completed' ? 'bg-gray-100 text-gray-800' :
+                                                    'bg-red-100 text-red-800'
                                             }`}>
                                             {event.status}
                                         </span>
@@ -693,7 +730,9 @@ export const EventsDashboard: React.FC = () => {
                                     className="text-gray-500 hover:text-gray-700"
                                     onClick={() => setSelectedEvent(null)}
                                 >
-                                    <i className="fas fa-times"></i>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                 </button>
                             </div>
                         </div>
@@ -709,9 +748,9 @@ export const EventsDashboard: React.FC = () => {
                                     <div className="flex justify-between">
                                         <span className="text-gray-600">Status:</span>
                                         <span className={`px-2 py-1 rounded text-xs font-medium ${selectedEvent.status === 'upcoming' ? 'bg-blue-100 text-blue-800' :
-                                                selectedEvent.status === 'ongoing' ? 'bg-green-100 text-green-800' :
-                                                    selectedEvent.status === 'completed' ? 'bg-gray-100 text-gray-800' :
-                                                        'bg-red-100 text-red-800'
+                                            selectedEvent.status === 'ongoing' ? 'bg-green-100 text-green-800' :
+                                                selectedEvent.status === 'completed' ? 'bg-gray-100 text-gray-800' :
+                                                    'bg-red-100 text-red-800'
                                             }`}>
                                             {selectedEvent.status}
                                         </span>
@@ -722,36 +761,30 @@ export const EventsDashboard: React.FC = () => {
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-gray-600">Location:</span>
-                                        <span className="font-medium">{selectedEvent.location}</span>
+                                        <span className="font-medium">{selectedEvent.event_location}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600">Coordinates:</span>
+                                        <span>
+                                            {selectedEvent.latitude}, {selectedEvent.longitude}
+                                        </span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-gray-600">Date/Time:</span>
                                         <span>
-                                            {selectedEvent.start_time.toLocaleString()} -<br />
-                                            {selectedEvent.end_time.toLocaleString()}
+                                            {new Date(selectedEvent.start_time).toLocaleString()} -<br />
+                                            {new Date(selectedEvent.end_time).toLocaleString()}
                                         </span>
                                     </div>
                                 </div>
                             </div>
 
                             <div>
-                                <h4 className="font-medium text-gray-900 mb-3">Parking & Attendance</h4>
+                                <h4 className="font-medium text-gray-900 mb-3">Additional Information</h4>
                                 <div className="space-y-3">
                                     <div className="flex justify-between">
-                                        <span className="text-gray-600">Expected Attendees:</span>
-                                        <span className="font-medium">{selectedEvent.attendees}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Parking Spots Reserved:</span>
-                                        <span className="font-medium">{selectedEvent.parking_spots_reserved}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Organizer:</span>
-                                        <span className="font-medium">{selectedEvent.organizer}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-600">Contact Email:</span>
-                                        <span className="font-medium">{selectedEvent.contact_email}</span>
+                                        <span className="text-gray-600">Parking Lots:</span>
+                                        <span className="font-medium">{selectedEvent.allowed_parking_lots.length}</span>
                                     </div>
                                 </div>
 
@@ -791,13 +824,172 @@ export const EventsDashboard: React.FC = () => {
                                 )}
                                 <button
                                     className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
-                                    onClick={() => {
-                                        // Navigate to edit page or show edit form
-                                    }}
                                 >
                                     Edit Details
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Create Event Modal */}
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="p-6 border-b border-gray-200">
+                            <div className="flex justify-between items-center">
+                                <h3 className="text-lg font-semibold text-gray-800">
+                                    Create New Event
+                                </h3>
+                                <button
+                                    className="text-gray-500 hover:text-gray-700"
+                                    onClick={() => setShowCreateModal(false)}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6">
+                            <div className="grid grid-cols-1 gap-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Event Name</label>
+                                    <input
+                                        type="text"
+                                        name="name"
+                                        value={newEvent.name}
+                                        onChange={handleInputChange}
+                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                    <textarea
+                                        name="description"
+                                        value={newEvent.description}
+                                        onChange={handleInputChange}
+                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                        rows={3}
+                                        required
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                        <input
+                                            type="date"
+                                            name="date"
+                                            value={newEvent.date}
+                                            onChange={handleInputChange}
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                            required
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Event Type</label>
+                                        <select
+                                            name="event_type"
+                                            value={newEvent.event_type}
+                                            onChange={handleInputChange}
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                            required
+                                        >
+                                            <option value="academic">Academic</option>
+                                            <option value="sports">Sports</option>
+                                            <option value="cultural">Cultural</option>
+                                            <option value="official">Official</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                                        <input
+                                            type="time"
+                                            name="start_time"
+                                            value={newEvent.start_time}
+                                            onChange={handleInputChange}
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                            required
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                                        <input
+                                            type="time"
+                                            name="end_time"
+                                            value={newEvent.end_time}
+                                            onChange={handleInputChange}
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                                    <input
+                                        type="text"
+                                        name="event_location"
+                                        value={newEvent.event_location}
+                                        onChange={handleInputChange}
+                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+                                        <input
+                                            type="number"
+                                            name="latitude"
+                                            value={newEvent.latitude}
+                                            onChange={handleInputChange}
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                            step="0.0001"
+                                            required
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+                                        <input
+                                            type="number"
+                                            name="longitude"
+                                            value={newEvent.longitude}
+                                            onChange={handleInputChange}
+                                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                            step="0.0001"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+                            <button
+                                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                                onClick={() => setShowCreateModal(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                                onClick={handleCreateEvent}
+                            >
+                                Create Event
+                            </button>
                         </div>
                     </div>
                 </div>

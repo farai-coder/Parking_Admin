@@ -2,53 +2,106 @@ import React, { useState, useEffect } from 'react';
 import * as echarts from 'echarts';
 
 interface ParkingSpot {
-    id: number;
+    spot_number: string;
     lot_name: string;
-    spot_number: number;
-    spot_type: 'student' | 'visitor' | 'staff' | 'disabled';
-    is_occupied: boolean;
-    last_occupied: string;
-    avg_occupancy_duration: number;
-    occupancy_rate: number;
-    latitude: number | null;
-    longitude: number | null;
+    is_vip: boolean;
+    parking_zone_id: string;
+    id: string;
+    status: string;
 }
 
-interface ParkingZone {
-    id: string;
-    name: string;
-    total_spots: number;
-    available_spots: number;
-    spots: ParkingSpot[];
+interface SpotTypeDistribution {
+    student: number;
+    staff: number;
+    visitor: number;
+    vip: number;
+}
+
+interface HourlyOccupancyTrend {
+    [key: string]: {
+        staff: number;
+        visitor: number;
+    };
 }
 
 export const ParkingSpacesDashboard: React.FC = () => {
-    // Mock data for parking spots
-    const mockSpots: ParkingSpot[] = Array.from({ length: 100 }, (_, i) => ({
-        id: i + 1,
-        lot_name: i < 50 ? 'Main Campus Lot' : 'North Parking Garage',
-        spot_number: i + 1,
-        spot_type:
-            i < 20 ? 'staff' :
-                i < 70 ? 'student' :
-                    i < 85 ? 'visitor' : 'disabled',
-        is_occupied: Math.random() > 0.5,
-        last_occupied: new Date(Date.now() - Math.floor(Math.random() * 48) * 3600000).toISOString(),
-        avg_occupancy_duration: Math.floor(Math.random() * 6) + 2,
-        occupancy_rate: Math.floor(Math.random() * 100),
-        latitude: 34.0522 + (Math.random() * 0.01),
-        longitude: -118.2437 + (Math.random() * 0.01)
-    }));
-
-    const [spots, setSpots] = useState<ParkingSpot[]>(mockSpots);
-    const [filteredSpots, setFilteredSpots] = useState<ParkingSpot[]>(mockSpots);
+    const [spots, setSpots] = useState<ParkingSpot[]>([]);
+    const [filteredSpots, setFilteredSpots] = useState<ParkingSpot[]>([]);
     const [selectedSpot, setSelectedSpot] = useState<ParkingSpot | null>(null);
+    const [totalSpots, setTotalSpots] = useState<number>(0);
+    const [availableSpots, setAvailableSpots] = useState<number>(0);
+    const [spotDistribution, setSpotDistribution] = useState<SpotTypeDistribution>({ student: 0, staff: 0, visitor: 0, vip: 0 });
+    const [hourlyTrend, setHourlyTrend] = useState<HourlyOccupancyTrend>({});
+    const [loading, setLoading] = useState<boolean>(true);
+
     const [filters, setFilters] = useState({
         lot: 'all',
         status: 'all',
         type: 'all',
         sort: 'number'
     });
+
+    // Fetch all data from APIs
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                setLoading(true);
+
+                // Fetch all spots
+                const spotsResponse = await fetch('http://localhost:8000/spots/all-spots', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const spotsData = await spotsResponse.json();
+                setSpots(spotsData);
+                setFilteredSpots(spotsData);
+
+                // Fetch total spots count
+                const totalSpotsResponse = await fetch('http://localhost:8000/analytics/spots_count', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const totalSpotsData = await totalSpotsResponse.json();
+                setTotalSpots(totalSpotsData);
+
+                // Fetch available spots count
+                const availableSpotsResponse = await fetch('http://localhost:8000/analytics/spots/unoccupied_count', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const availableSpotsData = await availableSpotsResponse.json();
+                setAvailableSpots(availableSpotsData);
+
+                // Fetch spot distribution by role
+                const distributionResponse = await fetch('http://localhost:8000/analytics/users/spot_distribution_by_role', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const distributionData = await distributionResponse.json();
+                setSpotDistribution(distributionData);
+
+                // Fetch hourly occupancy trend
+                const trendResponse = await fetch('http://localhost:8000/analytics/hourly_occupancy_trend_by_zone_type?hours_back=24', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const trendData = await trendResponse.json();
+                setHourlyTrend(trendData);
+
+                setLoading(false);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, []);
 
     // Apply filters
     useEffect(() => {
@@ -60,27 +113,33 @@ export const ParkingSpacesDashboard: React.FC = () => {
 
         if (filters.status !== 'all') {
             result = result.filter(spot =>
-                filters.status === 'occupied' ? spot.is_occupied : !spot.is_occupied
+                filters.status === 'occupied' ? spot.status === 'occupied' : spot.status === 'empty'
             );
         }
 
         if (filters.type !== 'all') {
-            result = result.filter(spot => spot.spot_type === filters.type);
+            // Note: Adjust this based on your actual type mapping
+            result = result.filter(spot => {
+                if (filters.type === 'vip') return spot.is_vip;
+                // Add other type filters as needed
+                return true;
+            });
         }
 
         // Apply sorting
         result.sort((a, b) => {
-            if (filters.sort === 'number') return a.spot_number - b.spot_number;
-            if (filters.sort === 'occupancy') return b.occupancy_rate - a.occupancy_rate;
-            if (filters.sort === 'duration') return b.avg_occupancy_duration - a.avg_occupancy_duration;
+            if (filters.sort === 'number') return a.spot_number.localeCompare(b.spot_number);
+            // Add other sorting options as needed
             return 0;
         });
 
         setFilteredSpots(result);
     }, [filters, spots]);
 
-    // Initialize charts
+    // Initialize charts with real data
     useEffect(() => {
+        if (loading) return;
+
         const initializeCharts = () => {
             // Spot Type Distribution Chart
             const typeChart = echarts.init(document.getElementById('spotTypeChart'));
@@ -102,7 +161,7 @@ export const ParkingSpacesDashboard: React.FC = () => {
                 },
                 legend: {
                     bottom: 10,
-                    data: ['Student', 'Staff', 'Visitor', 'Disabled']
+                    data: ['Student', 'Staff', 'Visitor', 'VIP']
                 },
                 series: [
                     {
@@ -129,16 +188,22 @@ export const ParkingSpacesDashboard: React.FC = () => {
                             show: false
                         },
                         data: [
-                            { value: spots.filter(s => s.spot_type === 'student').length, name: 'Student', itemStyle: { color: '#3B82F6' } },
-                            { value: spots.filter(s => s.spot_type === 'staff').length, name: 'Staff', itemStyle: { color: '#10B981' } },
-                            { value: spots.filter(s => s.spot_type === 'visitor').length, name: 'Visitor', itemStyle: { color: '#F59E0B' } },
-                            { value: spots.filter(s => s.spot_type === 'disabled').length, name: 'Disabled', itemStyle: { color: '#EF4444' } }
+                            { value: spotDistribution.student, name: 'Student', itemStyle: { color: '#3B82F6' } },
+                            { value: spotDistribution.staff, name: 'Staff', itemStyle: { color: '#10B981' } },
+                            { value: spotDistribution.visitor, name: 'Visitor', itemStyle: { color: '#F59E0B' } },
+                            { value: spotDistribution.vip, name: 'VIP', itemStyle: { color: '#EF4444' } }
                         ]
                     }
                 ]
             };
 
             // Occupancy Trend Options
+            const trendData = Object.entries(hourlyTrend).map(([time, data]) => ({
+                time,
+                staff: data.staff,
+                visitor: data.visitor
+            }));
+
             const trendOptions = {
                 title: {
                     text: 'Hourly Occupancy Trend',
@@ -149,42 +214,26 @@ export const ParkingSpacesDashboard: React.FC = () => {
                     trigger: 'axis'
                 },
                 legend: {
-                    data: ['Student', 'Staff', 'Visitor', 'Disabled'],
+                    data: ['Staff', 'Visitor'],
                     bottom: 10
                 },
                 xAxis: {
                     type: 'category',
                     boundaryGap: false,
-                    data: Array.from({ length: 24 }, (_, i) => `${i}:00`)
+                    data: trendData.map(item => item.time)
                 },
                 yAxis: {
                     type: 'value',
-                    name: 'Occupancy %',
+                    name: 'Occupancy Count',
                     axisLabel: {
-                        formatter: '{value}%'
+                        formatter: '{value}'
                     }
                 },
                 series: [
                     {
-                        name: 'Student',
-                        type: 'line',
-                        data: Array.from({ length: 24 }, (_, i) => {
-                            const base = 50;
-                            const variation = Math.sin(i / 24 * Math.PI * 2) * 30;
-                            return Math.min(100, Math.max(0, Math.round(base + variation)));
-                        }),
-                        smooth: true,
-                        lineStyle: { width: 3 },
-                        itemStyle: { color: '#3B82F6' }
-                    },
-                    {
                         name: 'Staff',
                         type: 'line',
-                        data: Array.from({ length: 24 }, (_, i) => {
-                            const base = 70;
-                            const variation = Math.sin((i - 8) / 24 * Math.PI * 2) * 20;
-                            return Math.min(100, Math.max(0, Math.round(base + variation)));
-                        }),
+                        data: trendData.map(item => item.staff),
                         smooth: true,
                         lineStyle: { width: 3 },
                         itemStyle: { color: '#10B981' }
@@ -192,26 +241,10 @@ export const ParkingSpacesDashboard: React.FC = () => {
                     {
                         name: 'Visitor',
                         type: 'line',
-                        data: Array.from({ length: 24 }, (_, i) => {
-                            const base = 30;
-                            const variation = Math.sin((i - 12) / 24 * Math.PI * 2) * 20;
-                            return Math.min(100, Math.max(0, Math.round(base + variation)));
-                        }),
+                        data: trendData.map(item => item.visitor),
                         smooth: true,
                         lineStyle: { width: 3 },
                         itemStyle: { color: '#F59E0B' }
-                    },
-                    {
-                        name: 'Disabled',
-                        type: 'line',
-                        data: Array.from({ length: 24 }, (_, i) => {
-                            const base = 40;
-                            const variation = Math.sin(i / 24 * Math.PI * 2) * 15;
-                            return Math.min(100, Math.max(0, Math.round(base + variation)));
-                        }),
-                        smooth: true,
-                        lineStyle: { width: 3 },
-                        itemStyle: { color: '#EF4444' }
                     }
                 ]
             };
@@ -262,12 +295,12 @@ export const ParkingSpacesDashboard: React.FC = () => {
                     {
                         name: 'Occupancy Rate',
                         type: 'heatmap',
-                        data: Array.from({ length: 100 }, (_, i) => {
+                        data: Array.from({ length: Math.min(100, spots.length) }, (_, i) => {
                             return {
                                 value: [
                                     Math.floor(i / 10),
                                     i % 10,
-                                    spots[i]?.occupancy_rate || Math.floor(Math.random() * 100)
+                                    spots[i]?.status === 'occupied' ? 100 : 0
                                 ]
                             };
                         }),
@@ -296,21 +329,28 @@ export const ParkingSpacesDashboard: React.FC = () => {
         };
 
         initializeCharts();
-    }, [spots, filteredSpots]);
+    }, [loading, spots, spotDistribution, hourlyTrend]);
 
-    const toggleSpotOccupancy = (id: number) => {
+    const toggleSpotOccupancy = (id: string) => {
         setSpots(prevSpots =>
             prevSpots.map(spot =>
                 spot.id === id
                     ? {
                         ...spot,
-                        is_occupied: !spot.is_occupied,
-                        last_occupied: new Date().toISOString()
+                        status: spot.status === 'occupied' ? 'empty' : 'occupied'
                     }
                     : spot
             )
         );
     };
+
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center h-screen">
+                <div className="text-xl font-semibold">Loading parking data...</div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -325,8 +365,9 @@ export const ParkingSpacesDashboard: React.FC = () => {
                             onChange={(e) => setFilters({ ...filters, lot: e.target.value })}
                         >
                             <option value="all">All Lots</option>
-                            <option value="Main Campus Lot">Main Campus Lot</option>
-                            <option value="North Parking Garage">North Parking Garage</option>
+                            {Array.from(new Set(spots.map(spot => spot.lot_name))).map(lot => (
+                                <option key={lot} value={lot}>{lot}</option>
+                            ))}
                         </select>
                     </div>
 
@@ -354,7 +395,7 @@ export const ParkingSpacesDashboard: React.FC = () => {
                             <option value="student">Student</option>
                             <option value="staff">Staff</option>
                             <option value="visitor">Visitor</option>
-                            <option value="disabled">Disabled</option>
+                            <option value="vip">VIP</option>
                         </select>
                     </div>
 
@@ -366,19 +407,18 @@ export const ParkingSpacesDashboard: React.FC = () => {
                             onChange={(e) => setFilters({ ...filters, sort: e.target.value as any })}
                         >
                             <option value="number">Spot Number</option>
-                            <option value="occupancy">Occupancy Rate</option>
-                            <option value="duration">Avg. Duration</option>
+                            {/* Add other sorting options as needed */}
                         </select>
                     </div>
 
                     <div className="flex items-end">
                         <button
                             className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                            onClick={() => setSpots([...mockSpots])}
                         >
                             Reset Filters
                         </button>
                     </div>
+
                 </div>
             </div>
 
@@ -387,45 +427,44 @@ export const ParkingSpacesDashboard: React.FC = () => {
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Total Spots</h3>
-                        <span className="text-2xl font-bold text-blue-600">{spots.length}</span>
+                        <span className="text-2xl font-bold text-blue-600">{totalSpots}</span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                        {spots.filter(s => s.spot_type === 'student').length} student, {spots.filter(s => s.spot_type === 'staff').length} staff
+                        {spotDistribution.student} student, {spotDistribution.staff} staff
                     </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Available Now</h3>
-                        <span className="text-2xl font-bold text-green-600">{spots.filter(s => !s.is_occupied).length}</span>
+                        <span className="text-2xl font-bold text-green-600">{availableSpots}</span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                        {Math.round((spots.filter(s => !s.is_occupied).length / spots.length) * 100)}% availability
+                        {totalSpots > 0 ? Math.round((availableSpots / totalSpots) * 100) : 0}% availability
                     </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-gray-800">Avg. Occupancy</h3>
+                        <h3 className="text-lg font-semibold text-gray-800">Occupied Spots</h3>
                         <span className="text-2xl font-bold text-orange-600">
-                            {Math.round(spots.reduce((sum, spot) => sum + spot.occupancy_rate, 0) / spots.length)}%
-
+                            {totalSpots - availableSpots}
                         </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                        Highest: {Math.max(...spots.map(s => s.occupancy_rate))}%
+                        {totalSpots > 0 ? Math.round(((totalSpots - availableSpots) / totalSpots) * 100) : 0}% occupancy
                     </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-gray-800">Avg. Duration</h3>
+                        <h3 className="text-lg font-semibold text-gray-800">VIP Spots</h3>
                         <span className="text-2xl font-bold text-purple-600">
-                            {Math.round(spots.reduce((sum, spot) => sum + spot.avg_occupancy_duration, 0) / spots.length)}h
+                            {spotDistribution.vip}
                         </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                        Longest: {Math.max(...spots.map(s => s.avg_occupancy_duration))}h
+                        {spots.filter(s => s.is_vip).filter(s => s.status === 'empty').length} available
                     </p>
                 </div>
             </div>
@@ -470,29 +509,26 @@ export const ParkingSpacesDashboard: React.FC = () => {
                             <div
                                 key={spot.id}
                                 className={`p-3 rounded-lg border cursor-pointer transition-all
-                  ${spot.is_occupied ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}
+                  ${spot.status === 'occupied' ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}
                   ${selectedSpot?.id === spot.id ? 'ring-2 ring-blue-500' : ''}
                 `}
                                 onClick={() => setSelectedSpot(spot)}
                             >
                                 <div className="flex justify-between items-start">
                                     <div>
-                                        <span className={`inline-block w-3 h-3 rounded-full mr-2 ${spot.is_occupied ? 'bg-red-500' : 'bg-green-500'
+                                        <span className={`inline-block w-3 h-3 rounded-full mr-2 ${spot.status === 'occupied' ? 'bg-red-500' : 'bg-green-500'
                                             }`}></span>
-                                        <span className="font-medium">Spot #{spot.spot_number}</span>
+                                        <span className="font-medium">Spot {spot.spot_number}</span>
                                     </div>
-                                    <span className={`text-xs px-2 py-1 rounded capitalize ${spot.spot_type === 'student' ? 'bg-blue-100 text-blue-800' :
-                                            spot.spot_type === 'staff' ? 'bg-green-100 text-green-800' :
-                                                spot.spot_type === 'visitor' ? 'bg-orange-100 text-orange-800' :
-                                                    'bg-red-100 text-red-800'
+                                    <span className={`text-xs px-2 py-1 rounded capitalize ${spot.is_vip ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
                                         }`}>
-                                        {spot.spot_type}
+                                        {spot.is_vip ? 'VIP' : 'Regular'}
                                     </span>
                                 </div>
                                 <div className="mt-2 text-sm text-gray-600">
                                     <div>Lot: {spot.lot_name}</div>
-                                    <div>Occupancy: {spot.occupancy_rate}%</div>
-                                    <div>Avg: {spot.avg_occupancy_duration}h</div>
+                                    <div>Status: {spot.status === 'occupied' ? 'Occupied' : 'Available'}</div>
+                                    <div>Zone: {spot.parking_zone_id.substring(0, 8)}...</div>
                                 </div>
                             </div>
                         ))}
@@ -512,7 +548,7 @@ export const ParkingSpacesDashboard: React.FC = () => {
                     <div className="p-6 border-b border-gray-200">
                         <div className="flex justify-between items-center">
                             <h3 className="text-lg font-semibold text-gray-800">
-                                Spot #{selectedSpot.spot_number} Details
+                                Spot {selectedSpot.spot_number} Details
                             </h3>
                             <button
                                 className="text-gray-500 hover:text-gray-700"
@@ -533,59 +569,36 @@ export const ParkingSpacesDashboard: React.FC = () => {
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-gray-600">Type:</span>
-                                    <span className={`px-2 py-1 rounded text-xs capitalize ${selectedSpot.spot_type === 'student' ? 'bg-blue-100 text-blue-800' :
-                                            selectedSpot.spot_type === 'staff' ? 'bg-green-100 text-green-800' :
-                                                selectedSpot.spot_type === 'visitor' ? 'bg-orange-100 text-orange-800' :
-                                                    'bg-red-100 text-red-800'
+                                    <span className={`px-2 py-1 rounded text-xs capitalize ${selectedSpot.is_vip ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
                                         }`}>
-                                        {selectedSpot.spot_type}
+                                        {selectedSpot.is_vip ? 'VIP' : 'Regular'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-gray-600">Status:</span>
-                                    <span className={`px-2 py-1 rounded text-xs font-medium ${selectedSpot.is_occupied ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                                    <span className={`px-2 py-1 rounded text-xs font-medium ${selectedSpot.status === 'occupied' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                                         }`}>
-                                        {selectedSpot.is_occupied ? 'Occupied' : 'Available'}
+                                        {selectedSpot.status === 'occupied' ? 'Occupied' : 'Available'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-gray-600">Coordinates:</span>
+                                    <span className="text-gray-600">Zone ID:</span>
                                     <span className="font-mono text-xs">
-                                        {selectedSpot.latitude?.toFixed(4)}, {selectedSpot.longitude?.toFixed(4)}
+                                        {selectedSpot.parking_zone_id}
                                     </span>
                                 </div>
                             </div>
                         </div>
 
                         <div>
-                            <h4 className="font-medium text-gray-900 mb-2">Occupancy Data</h4>
-                            <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-600">Occupancy Rate:</span>
-                                    <span className="font-medium">{selectedSpot.occupancy_rate}%</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-600">Avg. Duration:</span>
-                                    <span className="font-medium">{selectedSpot.avg_occupancy_duration} hours</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-600">Last Occupied:</span>
-                                    <span className="font-medium">
-                                        {new Date(selectedSpot.last_occupied).toLocaleString()}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <h4 className="font-medium text-gray-900 mb-2">Actions</h4>
+                            <h4 className="font-medium text-gray-900 mb-2">Spot Actions</h4>
                             <div className="space-y-3">
                                 <button
-                                    className={`w-full px-4 py-2 rounded-md text-white ${selectedSpot.is_occupied ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                                    className={`w-full px-4 py-2 rounded-md text-white ${selectedSpot.status === 'occupied' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
                                         }`}
                                     onClick={() => toggleSpotOccupancy(selectedSpot.id)}
                                 >
-                                    {selectedSpot.is_occupied ? 'Mark as Available' : 'Mark as Occupied'}
+                                    {selectedSpot.status === 'occupied' ? 'Mark as Available' : 'Mark as Occupied'}
                                 </button>
                                 <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
                                     View Reservation History

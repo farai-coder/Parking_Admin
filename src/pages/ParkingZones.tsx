@@ -2,81 +2,161 @@ import React, { useState, useEffect } from 'react';
 import * as echarts from 'echarts';
 
 interface ParkingSpot {
-    id: number;
+    spot_number: string;
     lot_name: string;
-    spot_number: number;
-    spot_type: 'student' | 'visitor' | 'staff' | 'disabled';
-    is_occupied: boolean;
-    latitude: number | null;
-    longitude: number | null;
+    is_vip: boolean;
+    parking_zone_id: string;
+    id: string;
+    status: string;
 }
 
 interface ParkingZone {
     id: string;
     name: string;
-    total_spots: number;
-    available_spots: number;
-    occupancy_rate: number;
-    spots: ParkingSpot[];
+    zone_type: string;
+}
+
+interface ZoneOccupancy {
+    [key: string]: number;
+}
+
+interface SpotTypeAvailability {
+    student: number;
+    staff: number;
+    visitor: number;
+    vip: number;
+}
+
+interface HourlyOccupancyTrend {
+    [key: string]: {
+        [key: string]: number;
+    };
 }
 
 export const ParkingZonesDashboard: React.FC = () => {
-    // Mock data for parking zones
-    const mockZones: ParkingZone[] = [
-        {
-            id: '1',
-            name: 'Main Campus Lot',
-            total_spots: 250,
-            available_spots: 75,
-            occupancy_rate: 70,
-            spots: Array.from({ length: 50 }, (_, i) => ({
-                id: i + 1,
-                lot_name: 'Main Campus Lot',
-                spot_number: i + 1,
-                spot_type: i < 20 ? 'staff' : i < 40 ? 'student' : i < 45 ? 'disabled' : 'visitor',
-                is_occupied: Math.random() > 0.3,
-                latitude: 34.0522 + (Math.random() * 0.001),
-                longitude: -118.2437 + (Math.random() * 0.001)
-            }))
-        },
-        {
-            id: '2',
-            name: 'North Parking Garage',
-            total_spots: 180,
-            available_spots: 42,
-            occupancy_rate: 77,
-            spots: Array.from({ length: 50 }, (_, i) => ({
-                id: i + 51,
-                lot_name: 'North Parking Garage',
-                spot_number: i + 1,
-                spot_type: i < 15 ? 'staff' : i < 35 ? 'student' : i < 40 ? 'disabled' : 'visitor',
-                is_occupied: Math.random() > 0.25,
-                latitude: 34.0530 + (Math.random() * 0.001),
-                longitude: -118.2440 + (Math.random() * 0.001)
-            }))
-        },
-        {
-            id: '3',
-            name: 'East Visitor Lot',
-            total_spots: 120,
-            available_spots: 68,
-            occupancy_rate: 43,
-            spots: Array.from({ length: 50 }, (_, i) => ({
-                id: i + 101,
-                lot_name: 'East Visitor Lot',
-                spot_number: i + 1,
-                spot_type: i < 5 ? 'staff' : i < 10 ? 'disabled' : 'visitor',
-                is_occupied: Math.random() > 0.5,
-                latitude: 34.0515 + (Math.random() * 0.001),
-                longitude: -118.2425 + (Math.random() * 0.001)
-            }))
-        }
-    ];
-
-    const [selectedZone, setSelectedZone] = useState<ParkingZone>(mockZones[0]);
+    const [zones, setZones] = useState<ParkingZone[]>([]);
+    const [selectedZone, setSelectedZone] = useState<ParkingZone | null>(null);
+    const [spots, setSpots] = useState<ParkingSpot[]>([]);
+    const [totalSpots, setTotalSpots] = useState<number>(0);
+    const [availableSpots, setAvailableSpots] = useState<number>(0);
+    const [zoneOccupancy, setZoneOccupancy] = useState<ZoneOccupancy>({});
+    const [spotTypeAvailability, setSpotTypeAvailability] = useState<SpotTypeAvailability>({
+        student: 0,
+        staff: 0,
+        visitor: 0,
+        vip: 0
+    });
+    const [hourlyTrend, setHourlyTrend] = useState<HourlyOccupancyTrend>({});
     const [timeFilter, setTimeFilter] = useState<'realtime' | 'today' | 'week' | 'month'>('realtime');
+    const [loading, setLoading] = useState<boolean>(true);
+
+    // Fetch all zones
+    useEffect(() => {
+        const fetchZones = async () => {
+            try {
+                const response = await fetch('http://localhost:8000/spots/zones/', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                setZones(data);
+                if (data.length > 0) {
+                    setSelectedZone(data[0]);
+                }
+            } catch (error) {
+                console.error('Error fetching zones:', error);
+            }
+        };
+
+        fetchZones();
+    }, []);
+
+    // Fetch data when selectedZone changes
+    useEffect(() => {
+        if (selectedZone) {
+            fetchZoneData(selectedZone.id);
+        }
+    }, [selectedZone]);
+
+    // Fetch all other data
+    useEffect(() => {
+        const fetchAllData = async () => {
+            try {
+                setLoading(true);
+
+                // Fetch total spots count
+                const spotsCountResponse = await fetch('http://localhost:8000/analytics/spots_count', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const spotsCount = await spotsCountResponse.json();
+                setTotalSpots(spotsCount);
+
+                // Fetch available spots count
+                const availableSpotsResponse = await fetch('http://localhost:8000/analytics/spots/unoccupied_count', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const availableSpotsCount = await availableSpotsResponse.json();
+                setAvailableSpots(availableSpotsCount);
+
+                // Fetch zone occupancy rates
+                const occupancyResponse = await fetch('http://localhost:8000/analytics/zones/occupancy_rate', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const occupancyData = await occupancyResponse.json();
+                setZoneOccupancy(occupancyData);
+
+                // Fetch spot type availability
+                const spotTypeResponse = await fetch('http://localhost:8000/analytics/users/spot_distribution_by_role', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const spotTypeData = await spotTypeResponse.json();
+                setSpotTypeAvailability(spotTypeData);
+
+                // Fetch hourly trend
+                const hourlyTrendResponse = await fetch('http://localhost:8000/analytics/hourly_occupancy_trend_by_zone?hours_back=24', {
+                    headers: {
+                        'accept': 'application/json'
+                    }
+                });
+                const hourlyTrendData = await hourlyTrendResponse.json();
+                setHourlyTrend(hourlyTrendData);
+
+                setLoading(false);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                setLoading(false);
+            }
+        };
+
+        fetchAllData();
+    }, []);
+
+    const fetchZoneData = async (zoneId: string) => {
+        try {
+            const response = await fetch(`http://localhost:8000/spots/zones/${zoneId}/spots`, {
+                headers: {
+                    'accept': 'application/json'
+                }
+            });
+            const data = await response.json();
+            setSpots(data);
+        } catch (error) {
+            console.error('Error fetching zone spots:', error);
+        }
+    };
 
     useEffect(() => {
+        if (loading || !selectedZone || zones.length === 0) return;
+
         const initializeCharts = () => {
             // Zone Occupancy Chart
             const zoneOccupancyChart = echarts.init(document.getElementById('zoneOccupancyChart'));
@@ -96,7 +176,7 @@ export const ParkingZonesDashboard: React.FC = () => {
                 },
                 xAxis: {
                     type: 'category',
-                    data: mockZones.map(zone => zone.name),
+                    data: zones.map(zone => zone.name),
                     axisLabel: {
                         rotate: 30,
                         interval: 0
@@ -111,7 +191,7 @@ export const ParkingZonesDashboard: React.FC = () => {
                     }
                 },
                 series: [{
-                    data: mockZones.map(zone => zone.occupancy_rate),
+                    data: zones.map(zone => zoneOccupancy[zone.name] || 0),
                     type: 'bar',
                     itemStyle: {
                         color: function (params: any) {
@@ -130,6 +210,26 @@ export const ParkingZonesDashboard: React.FC = () => {
                 }]
             };
 
+            // Process hourly trend data for chart
+            const hourlyData = Object.entries(hourlyTrend).map(([time, data]) => {
+                return {
+                    time,
+                    ...data
+                };
+            });
+
+            const zoneNames = zones.map(zone => zone.name);
+            const seriesData = zoneNames.map(zoneName => {
+                return {
+                    name: zoneName,
+                    type: 'line',
+                    smooth: true,
+                    data: hourlyData.map(item => item[zoneName] || 0),
+                    lineStyle: { width: 3 },
+                    symbol: 'none'
+                };
+            });
+
             // Hourly Trend Chart Option
             const hourlyTrendOption = {
                 title: {
@@ -141,12 +241,15 @@ export const ParkingZonesDashboard: React.FC = () => {
                     trigger: 'axis'
                 },
                 legend: {
-                    data: mockZones.map(zone => zone.name),
+                    data: zoneNames,
                     bottom: 0
                 },
                 xAxis: {
                     type: 'category',
-                    data: Array.from({ length: 24 }, (_, i) => `${i}:00`)
+                    data: hourlyData.map(item => {
+                        const date = new Date(item.time);
+                        return `${date.getHours()}:00`;
+                    })
                 },
                 yAxis: {
                     type: 'value',
@@ -156,18 +259,7 @@ export const ParkingZonesDashboard: React.FC = () => {
                         formatter: '{value}%'
                     }
                 },
-                series: mockZones.map(zone => ({
-                    name: zone.name,
-                    type: 'line',
-                    smooth: true,
-                    data: Array.from({ length: 24 }, (_, i) => {
-                        const base = zone.occupancy_rate;
-                        const variation = Math.sin(i / 24 * Math.PI * 2) * 20;
-                        return Math.min(100, Math.max(0, Math.round(base + variation)));
-                    }),
-                    lineStyle: { width: 3 },
-                    symbol: 'none'
-                }))
+                series: seriesData
             };
 
             // Spot Type Availability Chart Option
@@ -209,23 +301,23 @@ export const ParkingZonesDashboard: React.FC = () => {
                     },
                     data: [
                         {
-                            value: selectedZone.spots.filter(s => s.spot_type === 'student').length,
+                            value: spotTypeAvailability.student,
                             name: 'Student',
                             itemStyle: { color: '#3B82F6' }
                         },
                         {
-                            value: selectedZone.spots.filter(s => s.spot_type === 'staff').length,
+                            value: spotTypeAvailability.staff,
                             name: 'Staff',
                             itemStyle: { color: '#10B981' }
                         },
                         {
-                            value: selectedZone.spots.filter(s => s.spot_type === 'visitor').length,
+                            value: spotTypeAvailability.visitor,
                             name: 'Visitor',
                             itemStyle: { color: '#F59E0B' }
                         },
                         {
-                            value: selectedZone.spots.filter(s => s.spot_type === 'disabled').length,
-                            name: 'Disabled',
+                            value: spotTypeAvailability.vip,
+                            name: 'VIP',
                             itemStyle: { color: '#EF4444' }
                         }
                     ]
@@ -244,7 +336,13 @@ export const ParkingZonesDashboard: React.FC = () => {
         };
 
         initializeCharts();
-    }, [selectedZone, timeFilter]);
+    }, [selectedZone, timeFilter, loading, zones, zoneOccupancy, hourlyTrend, spotTypeAvailability]);
+
+    if (loading || !selectedZone || zones.length === 0) {
+        return <div className="flex justify-center items-center h-screen">Loading...</div>;
+    }
+
+    const currentZoneOccupancy = zoneOccupancy[selectedZone.name] || 0;
 
     return (
         <div className="space-y-6">
@@ -260,11 +358,11 @@ export const ParkingZonesDashboard: React.FC = () => {
                             className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             value={selectedZone.id}
                             onChange={(e) => {
-                                const zone = mockZones.find(z => z.id === e.target.value);
+                                const zone = zones.find(z => z.id === e.target.value);
                                 if (zone) setSelectedZone(zone);
                             }}
                         >
-                            {mockZones.map(zone => (
+                            {zones.map(zone => (
                                 <option key={zone.id} value={zone.id}>{zone.name}</option>
                             ))}
                         </select>
@@ -288,7 +386,10 @@ export const ParkingZonesDashboard: React.FC = () => {
                     </div>
 
                     <div className="flex items-end">
-                        <button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                        <button
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                            onClick={() => window.location.reload()}
+                        >
                             <i className="fas fa-sync-alt mr-2"></i>Refresh
                         </button>
                     </div>
@@ -300,36 +401,36 @@ export const ParkingZonesDashboard: React.FC = () => {
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Total Spots</h3>
-                        <span className="text-2xl font-bold text-blue-600">{selectedZone.total_spots}</span>
+                        <span className="text-2xl font-bold text-blue-600">{totalSpots}</span>
                     </div>
-                    <p className="text-sm text-gray-500 mt-2">Across all zones: {mockZones.reduce((sum, z) => sum + z.total_spots, 0)}</p>
+                    <p className="text-sm text-gray-500 mt-2">In selected zone: {spots.length}</p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Available Now</h3>
-                        <span className="text-2xl font-bold text-green-600">{selectedZone.available_spots}</span>
+                        <span className="text-2xl font-bold text-green-600">{availableSpots}</span>
                     </div>
-                    <p className="text-sm text-gray-500 mt-2">{Math.round((selectedZone.available_spots / selectedZone.total_spots) * 100)}% availability</p>
+                    <p className="text-sm text-gray-500 mt-2">{spots.length > 0 ? Math.round((availableSpots / totalSpots) * 100) : 0}% availability</p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Occupancy Rate</h3>
-                        <span className="text-2xl font-bold text-orange-600">{selectedZone.occupancy_rate}%</span>
+                        <span className="text-2xl font-bold text-orange-600">{currentZoneOccupancy}%</span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                        {selectedZone.occupancy_rate > 85 ? 'High occupancy' :
-                            selectedZone.occupancy_rate > 70 ? 'Moderate occupancy' : 'Low occupancy'}
+                        {currentZoneOccupancy > 85 ? 'High occupancy' :
+                            currentZoneOccupancy > 70 ? 'Moderate occupancy' : 'Low occupancy'}
                     </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-gray-800">Peak Hours</h3>
-                        <span className="text-2xl font-bold text-purple-600">9-11 AM</span>
+                        <h3 className="text-lg font-semibold text-gray-800">Zone Type</h3>
+                        <span className="text-2xl font-bold text-purple-600">{selectedZone.zone_type}</span>
                     </div>
-                    <p className="text-sm text-gray-500 mt-2">Next peak: 4-6 PM</p>
+                    <p className="text-sm text-gray-500 mt-2">Parking zone category</p>
                 </div>
             </div>
 
@@ -364,7 +465,7 @@ export const ParkingZonesDashboard: React.FC = () => {
                             </div>
                             <div className="flex items-center">
                                 <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2"></div>
-                                <span className="text-sm text-gray-600">Reserved</span>
+                                <span className="text-sm text-gray-600">VIP</span>
                             </div>
                         </div>
                     </div>
@@ -373,78 +474,18 @@ export const ParkingZonesDashboard: React.FC = () => {
                 <div className="p-6">
                     {/* Parking Spots Grid Visualization */}
                     <div className="grid grid-cols-10 gap-2">
-                        {selectedZone.spots.map(spot => (
+                        {spots.map(spot => (
                             <div
                                 key={spot.id}
                                 className={`aspect-square rounded flex items-center justify-center cursor-pointer transition-all
-                  ${spot.is_occupied ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}
-                  ${spot.spot_type === 'disabled' ? 'border-2 border-yellow-400' : ''}
+                  ${spot.status !== 'empty' ? 'bg-red-500 hover:bg-red-600' :
+                                        spot.is_vip ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'}
                 `}
-                                title={`Spot ${spot.spot_number} (${spot.spot_type}) - ${spot.is_occupied ? 'Occupied' : 'Available'}`}
+                                title={`Spot ${spot.spot_number} (${spot.is_vip ? 'VIP' : 'Regular'}) - ${spot.status !== 'empty' ? 'Occupied' : 'Available'}`}
                             >
                                 <span className="text-white text-xs font-medium">{spot.spot_number}</span>
                             </div>
                         ))}
-                    </div>
-
-                    {/* Legend for Spot Types */}
-                    <div className="mt-6 flex flex-wrap gap-4">
-                        <div className="flex items-center">
-                            <div className="w-4 h-4 rounded bg-blue-500 mr-2"></div>
-                            <span className="text-sm text-gray-600">Student</span>
-                        </div>
-                        <div className="flex items-center">
-                            <div className="w-4 h-4 rounded bg-green-600 mr-2"></div>
-                            <span className="text-sm text-gray-600">Staff</span>
-                        </div>
-                        <div className="flex items-center">
-                            <div className="w-4 h-4 rounded bg-orange-500 mr-2"></div>
-                            <span className="text-sm text-gray-600">Visitor</span>
-                        </div>
-                        <div className="flex items-center">
-                            <div className="w-4 h-4 rounded bg-red-600 mr-2 border-2 border-yellow-400"></div>
-                            <span className="text-sm text-gray-600">Disabled</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Detailed Spot Information */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-100">
-                <div className="p-6">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-4">Spot Details</h3>
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Spot #</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Used</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg. Duration</th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {selectedZone.spots.slice(0, 10).map(spot => (
-                                    <tr key={spot.id}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{spot.spot_number}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">{spot.spot_type}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                        ${spot.is_occupied ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                                                {spot.is_occupied ? 'Occupied' : 'Available'}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {new Date(Date.now() - Math.floor(Math.random() * 48) * 3600000).toLocaleTimeString()}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {Math.floor(Math.random() * 6) + 2} hours
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
                     </div>
                 </div>
             </div>

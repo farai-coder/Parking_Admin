@@ -4,6 +4,7 @@ import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import axios from 'axios';
+import { BASE_URL } from '../api';
 
 const localizer = momentLocalizer(moment);
 
@@ -59,14 +60,14 @@ export const EventsDashboard: React.FC = () => {
     const [stats, setStats] = useState({
         total_events: 0,
         type_distribution: {
-            academic: 0,
+            academia: 0,
             sports: 0,
             cultural: 0,
             official: 0
         },
         monthly_trend: {
             months: [] as string[],
-            academic: [] as number[],
+            academia: [] as number[],
             sports: [] as number[],
             cultural: [] as number[],
             official: [] as number[]
@@ -79,7 +80,7 @@ export const EventsDashboard: React.FC = () => {
         const fetchData = async () => {
             try {
                 // Fetch events
-                const eventsResponse = await axios.get('http://localhost:8000/events/');
+                const eventsResponse = await axios.get(`${BASE_URL}/events/`);
                 const eventsWithStatus = eventsResponse.data.map((event: any) => ({
                     ...event,
                     status: getEventStatus(event)
@@ -87,10 +88,10 @@ export const EventsDashboard: React.FC = () => {
                 setEvents(eventsWithStatus);
 
                 // Fetch statistics
-                const totalEventsResponse = await axios.get('http://localhost:8000/analytics/api/analytics/events/count');
-                const typeDistributionResponse = await axios.get('http://localhost:8000/analytics/api/analytics/events/distribution_by_type');
-                const monthlyTrendResponse = await axios.get('http://localhost:8000/analytics/api/analytics/events/trend_by_month');
-                const weeklyDistributionResponse = await axios.get('http://localhost:8000/analytics/api/analytics/events/distribution_by_week');
+                const totalEventsResponse = await axios.get(`${BASE_URL}/analytics/api/analytics/events/count`);
+                const typeDistributionResponse = await axios.get(`${BASE_URL}/analytics/api/analytics/events/distribution_by_type`);
+                const monthlyTrendResponse = await axios.get(`${BASE_URL}/analytics/api/analytics/events/trend_by_month`);
+                const weeklyDistributionResponse = await axios.get(`${BASE_URL}/analytics/api/analytics/events/distribution_by_week`);
 
                 setStats({
                     total_events: totalEventsResponse.data.total_events,
@@ -184,7 +185,7 @@ export const EventsDashboard: React.FC = () => {
                 legend: {
                     orient: 'horizontal',
                     bottom: 0,
-                    data: ['Academic', 'Sports', 'Cultural', 'Official']
+                    data: ['academia', 'Sports', 'Cultural', 'Official']
                 },
                 series: [
                     {
@@ -212,8 +213,8 @@ export const EventsDashboard: React.FC = () => {
                         },
                         data: [
                             {
-                                value: stats.type_distribution.academic,
-                                name: 'Academic',
+                                value: stats.type_distribution.academia,
+                                name: 'academia',
                                 itemStyle: { color: '#3B82F6' }
                             },
                             {
@@ -248,7 +249,7 @@ export const EventsDashboard: React.FC = () => {
                     trigger: 'axis'
                 },
                 legend: {
-                    data: ['Academic', 'Sports', 'Cultural', 'Official'],
+                    data: ['academia', 'Sports', 'Cultural', 'Official'],
                     bottom: 0
                 },
                 xAxis: {
@@ -261,10 +262,10 @@ export const EventsDashboard: React.FC = () => {
                 },
                 series: [
                     {
-                        name: 'Academic',
+                        name: 'academia',
                         type: 'line',
                         smooth: true,
-                        data: stats.monthly_trend.academic,
+                        data: stats.monthly_trend.academia,
                         lineStyle: { width: 3 },
                         itemStyle: { color: '#3B82F6' }
                     },
@@ -314,7 +315,7 @@ export const EventsDashboard: React.FC = () => {
                 },
                 xAxis: {
                     type: 'category',
-                    data: ['Academic', 'Sports', 'Cultural', 'Official']
+                    data: ['academia', 'Sports', 'Cultural', 'Official']
                 },
                 yAxis: {
                     type: 'value',
@@ -325,7 +326,7 @@ export const EventsDashboard: React.FC = () => {
                         name: 'Events',
                         type: 'bar',
                         data: [
-                            stats.type_distribution.academic,
+                            stats.type_distribution.academia,
                             stats.type_distribution.sports,
                             stats.type_distribution.cultural,
                             stats.type_distribution.official
@@ -371,7 +372,7 @@ export const EventsDashboard: React.FC = () => {
         let borderColor = '';
 
         switch (event.eventType) {
-            case 'academic':
+            case 'academia':
                 backgroundColor = '#BFDBFE';
                 borderColor = '#3B82F6';
                 break;
@@ -435,7 +436,7 @@ export const EventsDashboard: React.FC = () => {
                 end_time: `${newEvent.date}T${newEvent.end_time}:00.000Z`
             };
 
-            const response = await axios.post('http://localhost:8000/events/', formattedEvent, {
+            const response = await axios.post(`${BASE_URL}/events/`, formattedEvent, {
                 headers: {
                     'accept': 'application/json',
                     'Content-Type': 'application/json'
@@ -449,6 +450,7 @@ export const EventsDashboard: React.FC = () => {
             };
             setEvents([...events, eventWithStatus]);
             setShowCreateModal(false);
+            alert('Event created successfully!');
             setNewEvent({
                 name: '',
                 description: '',
@@ -502,10 +504,10 @@ export const EventsDashboard: React.FC = () => {
                             onChange={(e) => setFilter({ ...filter, eventType: e.target.value })}
                         >
                             <option value="all">All Types</option>
-                            <option value="academic">Academic</option>
-                            <option value="sports">Sports</option>
-                            <option value="cultural">Cultural</option>
-                            <option value="official">Official</option>
+                            <option value="academic">academic</option>
+                            <option value="sports">sports</option>
+                            <option value="cultural">cultural</option>
+                            <option value="official">official</option>
                         </select>
                     </div>
 
@@ -864,6 +866,7 @@ export const EventsDashboard: React.FC = () => {
                                         onChange={handleInputChange}
                                         className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                         required
+                                        placeholder="e.g. University of Zimbabwe Founders Day Celebration"
                                     />
                                 </div>
 
@@ -876,6 +879,7 @@ export const EventsDashboard: React.FC = () => {
                                         className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                         rows={3}
                                         required
+                                        placeholder="e.g. An official annual event celebrating the founding of the University..."
                                     />
                                 </div>
 
@@ -901,10 +905,10 @@ export const EventsDashboard: React.FC = () => {
                                             className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                             required
                                         >
-                                            <option value="academic">Academic</option>
-                                            <option value="sports">Sports</option>
-                                            <option value="cultural">Cultural</option>
-                                            <option value="official">Official</option>
+                                            <option value="academic">academia</option>
+                                            <option value="sports">sports</option>
+                                            <option value="cultural">cultural</option>
+                                            <option value="official">official</option>
                                         </select>
                                     </div>
                                 </div>
@@ -944,6 +948,7 @@ export const EventsDashboard: React.FC = () => {
                                         onChange={handleInputChange}
                                         className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                         required
+                                        placeholder="e.g. University of Zimbabwe Great Hall"
                                     />
                                 </div>
 
@@ -958,6 +963,7 @@ export const EventsDashboard: React.FC = () => {
                                             className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                             step="0.0001"
                                             required
+                                            placeholder="e.g. -17.7834"
                                         />
                                     </div>
 
@@ -971,7 +977,38 @@ export const EventsDashboard: React.FC = () => {
                                             className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                             step="0.0001"
                                             required
+                                            placeholder="e.g. 31.0506"
                                         />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Allowed Parking Lots</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {['Innovation Hub', 'uz admin'].map((lot) => (
+                                            <div key={lot} className="flex items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    id={`lot-${lot}`}
+                                                    name="allowed_parking_lots"
+                                                    value={lot}
+                                                    checked={newEvent.allowed_parking_lots.includes(lot)}
+                                                    onChange={(e) => {
+                                                        const isChecked = e.target.checked;
+                                                        setNewEvent(prev => ({
+                                                            ...prev,
+                                                            allowed_parking_lots: isChecked
+                                                                ? [...prev.allowed_parking_lots, lot]
+                                                                : prev.allowed_parking_lots.filter(l => l !== lot)
+                                                        }));
+                                                    }}
+                                                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                                />
+                                                <label htmlFor={`lot-${lot}`} className="ml-2 text-sm text-gray-700">
+                                                    {lot}
+                                                </label>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>

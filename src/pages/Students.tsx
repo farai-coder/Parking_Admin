@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BASE_URL } from '../api';
 
 interface Student {
     id: string;
@@ -36,7 +37,7 @@ export const StudentsDashboard: React.FC = () => {
     useEffect(() => {
         const fetchStudents = async () => {
             try {
-                const response = await fetch('http://localhost:8000/users/students', {
+                const response = await fetch(`${BASE_URL}/users/students`, {
                     headers: {
                         'accept': 'application/json'
                     }
@@ -73,7 +74,7 @@ export const StudentsDashboard: React.FC = () => {
         }
 
         setFilteredStudents(result);
-    }, [filters, students]);
+    }, [filters, students, newStudent]);
 
     const updateStudentStatus = async (id: string, status: string) => {
         try {
@@ -93,7 +94,7 @@ export const StudentsDashboard: React.FC = () => {
     const handleAddStudent = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const response = await fetch('http://localhost:8000/users/', {
+            const response = await fetch(`${BASE_URL}/users/`, {
                 method: 'POST',
                 headers: {
                     'accept': 'application/json',
@@ -106,6 +107,7 @@ export const StudentsDashboard: React.FC = () => {
                 const createdStudent = await response.json();
                 setStudents([...students, createdStudent]);
                 setShowAddModal(false);
+                alert('Student created successfully');
                 setNewStudent({
                     name: '',
                     surname: '',
@@ -208,12 +210,12 @@ export const StudentsDashboard: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-800">
                             Student Records ({filteredStudents.length})
                         </h3>
-                        <button
+                        {/* <button
                             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                             onClick={() => setShowAddModal(true)}
                         >
                             + Add New Student
-                        </button>
+                        </button> */}
                     </div>
                 </div>
                 <div className="overflow-x-auto">

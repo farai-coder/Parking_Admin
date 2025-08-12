@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as echarts from 'echarts';
+import { BASE_URL } from '../api';
 
 interface User {
     id: string;
@@ -69,13 +70,13 @@ export const AdminDashboard: React.FC = () => {
                     spotDistributionRes,
                     reservationTrendRes
                 ] = await Promise.all([
-                    fetch('http://localhost:8000/analytics/spots_count', { headers: { 'accept': 'application/json' } }),
-                    fetch('http://localhost:8000/analytics/spots/occupied_count', { headers: { 'accept': 'application/json' } }),
-                    fetch('http://localhost:8000/analytics/reservations_count', { headers: { 'accept': 'application/json' } }),
-                    fetch('http://localhost:8000/analytics/users_count', { headers: { 'accept': 'application/json' } }),
-                    fetch('http://localhost:8000/analytics/zones/occupancy_rate', { headers: { 'accept': 'application/json' } }),
-                    fetch('http://localhost:8000/analytics/users/spot_distribution_by_role', { headers: { 'accept': 'application/json' } }),
-                    fetch('http://localhost:8000/analytics/reservations/by_day_of_week', { headers: { 'accept': 'application/json' } })
+                    fetch(`${BASE_URL}/analytics/spots_count`, { headers: { 'accept': 'application/json' } }),
+                    fetch(`${BASE_URL}/analytics/occupied_spots_count`, { headers: { 'accept': 'application/json' } }),
+                    fetch(`${BASE_URL}/analytics/reservations_count`, { headers: { 'accept': 'application/json' } }),
+                    fetch(`${BASE_URL}/analytics/users_count`, { headers: { 'accept': 'application/json' } }),
+                    fetch(`${BASE_URL}/analytics/zones/occupancy_rate`, { headers: { 'accept': 'application/json' } }),
+                    fetch(`${BASE_URL}/analytics/users/spot_distribution_by_role`, { headers: { 'accept': 'application/json' } }),
+                    fetch(`${BASE_URL}/analytics/reservations/by_day_of_week`, { headers: { 'accept': 'application/json' } })
                 ]);
 
                 const [
@@ -261,7 +262,7 @@ export const AdminDashboard: React.FC = () => {
             const userTypeOption = {
                 animation: false,
                 title: {
-                    text: 'User Type Distribution',
+                    text: 'User Type Parking Distribution',
                     textStyle: { fontSize: 14, fontWeight: 'normal' }
                 },
                 tooltip: {

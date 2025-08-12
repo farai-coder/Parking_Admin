@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import 'font-awesome/css/font-awesome.min.css';
 import { useAuth } from './AuthProvider';
+import { BASE_URL } from '../api';
 
 type FormData = {
   email: string;
@@ -26,7 +27,7 @@ const Login: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/auth/login', {
+      const response = await fetch(`${BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -41,17 +42,13 @@ const Login: React.FC = () => {
       const data = await response.json();
 
       if (response.ok) {
-        // Assuming your API returns user data including id, name, and role
-        login(data.user_id, data.user_name, data.user_role, data.user_email);
-
-        // if (rememberMe) {
-        //   localStorage.setItem('rememberMe', 'true');
-        //   localStorage.setItem('authToken', data.token);
-        // } else {
-        //   sessionStorage.setItem('authToken', data.token);
-        // }
-
-        navigate('/dashboard');
+        // Check if user has admin role
+        if (data.user_role === 'admin') {
+          login(data.user_id, data.user_name, data.user_role, data.user_email);
+          navigate('/dashboard');
+        } else {
+          setError('Access restricted to admin users only.');
+        }
       } else {
         setError(data.detail || 'Login failed. Please check your credentials.');
       }
@@ -78,7 +75,7 @@ const Login: React.FC = () => {
                 <i className="fas fa-lock text-xl text-blue-500"></i>
               </div>
               <h2 className="text-xl font-semibold text-gray-800">Sign in to your account</h2>
-              <p className="text-sm text-gray-500 mt-1">
+              {/* <p className="text-sm text-gray-500 mt-1">
                 Don't have an account?{' '}
                 <button
                   onClick={() => navigate('/signup')}
@@ -86,7 +83,7 @@ const Login: React.FC = () => {
                 >
                   Sign up
                 </button>
-              </p>
+              </p> */}
             </div>
 
             {error && (

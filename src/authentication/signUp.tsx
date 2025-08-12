@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BASE_URL } from '../api';
 
 interface FormData {
   email: string;
@@ -65,7 +66,7 @@ const SignUp: React.FC = () => {
 
     try {
       // Create user
-      const userResponse = await fetch('http://localhost:8000/users/', {
+      const userResponse = await fetch(`${BASE_URL}/users/`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -92,7 +93,7 @@ const SignUp: React.FC = () => {
       if (!userId) throw new Error('User ID not found');
 
       // Set password
-      const passwordResponse = await fetch('http://localhost:8000/auth/set-password', {
+      const passwordResponse = await fetch(`${BASE_URL}/auth/set-password`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -109,7 +110,6 @@ const SignUp: React.FC = () => {
         throw new Error(errorData.detail || errorData.message || 'Password setup failed');
       }
 
-      alert('Account created successfully! Redirecting to login...');
       setTimeout(() => navigate('/login'), 1500);
     } catch (error) {
       setApiError(error instanceof Error ? error.message : 'Registration failed');
@@ -251,12 +251,21 @@ const SignUp: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Confirm Password</label>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-500 ${errors.confirmPassword ? 'border-red-300' : 'border-gray-200'}`}
-                  value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className={`w-full px-3 py-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-500 ${errors.confirmPassword ? 'border-red-300' : 'border-gray-200'}`}
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2 text-gray-400 hover:text-gray-600"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'} text-sm`}></i>
+                  </button>
+                </div>
                 {errors.confirmPassword && <p className="mt-1 text-xs text-red-500">{errors.confirmPassword}</p>}
               </div>
 

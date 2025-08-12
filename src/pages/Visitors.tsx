@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BASE_URL } from '../api';
 
 interface Visitor {
     id: string;
@@ -36,7 +37,7 @@ export const VisitorsDashboard: React.FC = () => {
     useEffect(() => {
         const fetchVisitors = async () => {
             try {
-                const response = await fetch('http://localhost:8000/users/visitors', {
+                const response = await fetch(`${BASE_URL}/users/visitors`, {
                     headers: {
                         'accept': 'application/json'
                     }
@@ -93,7 +94,7 @@ export const VisitorsDashboard: React.FC = () => {
     const handleCreateVisitor = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const response = await fetch('http://localhost:8000/users/', {
+            const response = await fetch(`${BASE_URL}/users/`, {
                 method: 'POST',
                 headers: {
                     'accept': 'application/json',
@@ -210,12 +211,12 @@ export const VisitorsDashboard: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-800">
                             Visitor Records ({filteredVisitors.length})
                         </h3>
-                        <button
+                        {/* <button
                             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                             onClick={() => setShowCreateModal(true)}
                         >
                             + Add New Visitor
-                        </button>
+                        </button> */}
                     </div>
                 </div>
                 <div className="overflow-x-auto">

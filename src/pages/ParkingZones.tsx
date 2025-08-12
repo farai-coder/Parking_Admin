@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as echarts from 'echarts';
+import { BASE_URL } from '../api';
 
 interface ParkingSpot {
     spot_number: string;
@@ -33,6 +34,13 @@ interface HourlyOccupancyTrend {
     };
 }
 
+interface CreateZoneForm {
+    name: string;
+    zone_type: string;
+    latitude: string;
+    logitude: string;
+}
+
 export const ParkingZonesDashboard: React.FC = () => {
     const [zones, setZones] = useState<ParkingZone[]>([]);
     const [selectedZone, setSelectedZone] = useState<ParkingZone | null>(null);
@@ -49,103 +57,73 @@ export const ParkingZonesDashboard: React.FC = () => {
     const [hourlyTrend, setHourlyTrend] = useState<HourlyOccupancyTrend>({});
     const [timeFilter, setTimeFilter] = useState<'realtime' | 'today' | 'week' | 'month'>('realtime');
     const [loading, setLoading] = useState<boolean>(true);
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [newZone, setNewZone] = useState<CreateZoneForm>({
+        name: '',
+        zone_type: 'visitor',
+        latitude: '',
+        logitude: ''
+    });
+    const [isCreating, setIsCreating] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    // Fetch all zones
-    useEffect(() => {
-        const fetchZones = async () => {
-            try {
-                const response = await fetch('http://localhost:8000/spots/zones/', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
+    const fetchAllData = async () => {
+        try {
+            setLoading(true);
+
+            // 1. First fetch zones
+            const zonesResponse = await fetch(`${BASE_URL}/spots/zones/`, {
+                headers: { 'accept': 'application/json' }
+            });
+            const zonesData = await zonesResponse.json();
+            setZones(zonesData);
+
+            if (zonesData.length > 0) {
+                setSelectedZone(zonesData[0]);
+
+                // 2. Then fetch zone-specific spots
+                const spotsResponse = await fetch(`${BASE_URL}/spots/zones/${zonesData[0].id}/spots`, {
+                    headers: { 'accept': 'application/json' }
                 });
-                const data = await response.json();
-                setZones(data);
-                if (data.length > 0) {
-                    setSelectedZone(data[0]);
-                }
-            } catch (error) {
-                console.error('Error fetching zones:', error);
+                setSpots(await spotsResponse.json());
             }
-        };
 
-        fetchZones();
-    }, []);
+            // 3. Fetch all analytics data in parallel
+            const [
+                spotsCountResponse,
+                availableSpotsResponse,
+                occupancyResponse,
+                spotTypeResponse,
+                hourlyTrendResponse
+            ] = await Promise.all([
+                fetch(`${BASE_URL}/analytics/spots_count`, { headers: { 'accept': 'application/json' } }),
+                fetch(`${BASE_URL}/analytics/spots/unoccupied_count`, { headers: { 'accept': 'application/json' } }),
+                fetch(`${BASE_URL}/analytics/zones/occupancy_rate`, { headers: { 'accept': 'application/json' } }),
+                fetch(`${BASE_URL}/analytics/users/spot_distribution_by_role`, { headers: { 'accept': 'application/json' } }),
+                fetch(`${BASE_URL}/analytics/hourly_occupancy_trend_by_zone?hours_back=24`, { headers: { 'accept': 'application/json' } })
+            ]);
 
-    // Fetch data when selectedZone changes
-    useEffect(() => {
-        if (selectedZone) {
-            fetchZoneData(selectedZone.id);
+            setTotalSpots(await spotsCountResponse.json());
+            setAvailableSpots(await availableSpotsResponse.json());
+            setZoneOccupancy(await occupancyResponse.json());
+            setSpotTypeAvailability(await spotTypeResponse.json());
+            setHourlyTrend(await hourlyTrendResponse.json());
+
+            setLoading(false);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            setLoading(false);
         }
-    }, [selectedZone]);
+    };
 
-    // Fetch all other data
     useEffect(() => {
-        const fetchAllData = async () => {
-            try {
-                setLoading(true);
-
-                // Fetch total spots count
-                const spotsCountResponse = await fetch('http://localhost:8000/analytics/spots_count', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const spotsCount = await spotsCountResponse.json();
-                setTotalSpots(spotsCount);
-
-                // Fetch available spots count
-                const availableSpotsResponse = await fetch('http://localhost:8000/analytics/spots/unoccupied_count', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const availableSpotsCount = await availableSpotsResponse.json();
-                setAvailableSpots(availableSpotsCount);
-
-                // Fetch zone occupancy rates
-                const occupancyResponse = await fetch('http://localhost:8000/analytics/zones/occupancy_rate', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const occupancyData = await occupancyResponse.json();
-                setZoneOccupancy(occupancyData);
-
-                // Fetch spot type availability
-                const spotTypeResponse = await fetch('http://localhost:8000/analytics/users/spot_distribution_by_role', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const spotTypeData = await spotTypeResponse.json();
-                setSpotTypeAvailability(spotTypeData);
-
-                // Fetch hourly trend
-                const hourlyTrendResponse = await fetch('http://localhost:8000/analytics/hourly_occupancy_trend_by_zone?hours_back=24', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const hourlyTrendData = await hourlyTrendResponse.json();
-                setHourlyTrend(hourlyTrendData);
-
-                setLoading(false);
-            } catch (error) {
-                console.error('Error fetching data:', error);
-                setLoading(false);
-            }
-        };
-
         fetchAllData();
     }, []);
 
     const fetchZoneData = async (zoneId: string) => {
         try {
-            const response = await fetch(`http://localhost:8000/spots/zones/${zoneId}/spots`, {
-                headers: {
-                    'accept': 'application/json'
-                }
+            const response = await fetch(`${ BASE_URL}/spots/zones/${zoneId}/spots`, {
+                headers: { 'accept': 'application/json' }
             });
             const data = await response.json();
             setSpots(data);
@@ -154,16 +132,72 @@ export const ParkingZonesDashboard: React.FC = () => {
         }
     };
 
-    useEffect(() => {
-        if (loading || !selectedZone || zones.length === 0) return;
+    const handleCreateZone = async () => {
+        if (!newZone.name.trim()) {
+            setError('Zone name is required');
+            return;
+        }
 
+        const lat = parseFloat(newZone.latitude);
+        const lng = parseFloat(newZone.logitude);
+
+        if (isNaN(lat)) {
+            setError('Please enter a valid latitude');
+            return;
+        }
+
+        if (isNaN(lng)) {
+            setError('Please enter a valid logitude');
+            return;
+        }
+
+        setIsCreating(true);
+        setError(null);
+
+        try {
+            const response = await fetch(`${ BASE_URL}/spots/zones/`, {
+                method: 'POST',
+                headers: {
+                    'accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: newZone.name,
+                    zone_type: newZone.zone_type,
+                    latitude: lat,
+                    logitude: lng
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to create zone');
+            }
+
+            const createdZone = await response.json();
+
+            // Refresh all data after successful creation
+            await fetchAllData();
+
+            // Select the newly created zone
+            setSelectedZone(createdZone);
+            setShowCreateModal(false);
+            setNewZone({
+                name: '',
+                zone_type: 'visitor',
+                latitude: '',
+                logitude: ''
+            });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An unknown error occurred');
+        } finally {
+            setIsCreating(false);
+        }
+    };
+
+    useEffect(() => {
         const initializeCharts = () => {
             // Zone Occupancy Chart
             const zoneOccupancyChart = echarts.init(document.getElementById('zoneOccupancyChart'));
-            const hourlyTrendChart = echarts.init(document.getElementById('hourlyTrendChart'));
-            const spotTypeAvailabilityChart = echarts.init(document.getElementById('spotTypeAvailabilityChart'));
-
-            // Zone Occupancy Chart Option
             const zoneOccupancyOption = {
                 title: {
                     text: 'Zone Occupancy Rates',
@@ -172,11 +206,11 @@ export const ParkingZonesDashboard: React.FC = () => {
                 },
                 tooltip: {
                     trigger: 'item',
-                    formatter: '{b}: {c}%'
+                    formatter: zones.length > 0 ? '{b}: {c}%' : 'No data available'
                 },
                 xAxis: {
                     type: 'category',
-                    data: zones.map(zone => zone.name),
+                    data: zones.length > 0 ? zones.map(zone => zone.name) : ['No zones'],
                     axisLabel: {
                         rotate: 30,
                         interval: 0
@@ -191,7 +225,7 @@ export const ParkingZonesDashboard: React.FC = () => {
                     }
                 },
                 series: [{
-                    data: zones.map(zone => zoneOccupancy[zone.name] || 0),
+                    data: zones.length > 0 ? zones.map(zone => zoneOccupancy[zone.name] || 0) : [0],
                     type: 'bar',
                     itemStyle: {
                         color: function (params: any) {
@@ -210,7 +244,8 @@ export const ParkingZonesDashboard: React.FC = () => {
                 }]
             };
 
-            // Process hourly trend data for chart
+            // Hourly Trend Chart
+            const hourlyTrendChart = echarts.init(document.getElementById('hourlyTrendChart'));
             const hourlyData = Object.entries(hourlyTrend).map(([time, data]) => {
                 return {
                     time,
@@ -218,19 +253,16 @@ export const ParkingZonesDashboard: React.FC = () => {
                 };
             });
 
-            const zoneNames = zones.map(zone => zone.name);
-            const seriesData = zoneNames.map(zoneName => {
-                return {
-                    name: zoneName,
-                    type: 'line',
-                    smooth: true,
-                    data: hourlyData.map(item => item[zoneName] || 0),
-                    lineStyle: { width: 3 },
-                    symbol: 'none'
-                };
-            });
+            const zoneNames = zones.length > 0 ? zones.map(zone => zone.name) : ['No zones'];
+            const seriesData = zoneNames.map(zoneName => ({
+                name: zoneName,
+                type: 'line',
+                smooth: true,
+                data: hourlyData.map(item => (item as any)[zoneName] || 0),
+                lineStyle: { width: 3 },
+                symbol: 'none'
+            }));
 
-            // Hourly Trend Chart Option
             const hourlyTrendOption = {
                 title: {
                     text: 'Hourly Occupancy Trend',
@@ -246,10 +278,12 @@ export const ParkingZonesDashboard: React.FC = () => {
                 },
                 xAxis: {
                     type: 'category',
-                    data: hourlyData.map(item => {
-                        const date = new Date(item.time);
-                        return `${date.getHours()}:00`;
-                    })
+                    data: hourlyData.length > 0
+                        ? hourlyData.map(item => {
+                            const date = new Date(item.time);
+                            return `${date.getHours()}:00`;
+                        })
+                        : ['No data']
                 },
                 yAxis: {
                     type: 'value',
@@ -262,7 +296,8 @@ export const ParkingZonesDashboard: React.FC = () => {
                 series: seriesData
             };
 
-            // Spot Type Availability Chart Option
+            // Spot Type Availability Chart
+            const spotTypeAvailabilityChart = echarts.init(document.getElementById('spotTypeAvailabilityChart'));
             const spotTypeAvailabilityOption = {
                 title: {
                     text: 'Spot Type Availability',
@@ -335,14 +370,16 @@ export const ParkingZonesDashboard: React.FC = () => {
             };
         };
 
-        initializeCharts();
+        if (!loading) {
+            initializeCharts();
+        }
     }, [selectedZone, timeFilter, loading, zones, zoneOccupancy, hourlyTrend, spotTypeAvailability]);
 
-    if (loading || !selectedZone || zones.length === 0) {
+    if (loading) {
         return <div className="flex justify-center items-center h-screen">Loading...</div>;
     }
 
-    const currentZoneOccupancy = zoneOccupancy[selectedZone.name] || 0;
+    const currentZoneOccupancy = selectedZone ? zoneOccupancy[selectedZone.name] || 0 : 0;
 
     return (
         <div className="space-y-6">
@@ -353,19 +390,35 @@ export const ParkingZonesDashboard: React.FC = () => {
                         <label htmlFor="zone-select" className="block text-sm font-medium text-gray-700 mb-1">
                             Select Parking Zone
                         </label>
-                        <select
-                            id="zone-select"
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            value={selectedZone.id}
-                            onChange={(e) => {
-                                const zone = zones.find(z => z.id === e.target.value);
-                                if (zone) setSelectedZone(zone);
-                            }}
-                        >
-                            {zones.map(zone => (
-                                <option key={zone.id} value={zone.id}>{zone.name}</option>
-                            ))}
-                        </select>
+                        <div className="flex gap-2">
+                            <select
+                                id="zone-select"
+                                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                value={selectedZone?.id || ''}
+                                onChange={(e) => {
+                                    const zone = zones.find(z => z.id === e.target.value);
+                                    if (zone) {
+                                        setSelectedZone(zone);
+                                        fetchZoneData(zone.id);
+                                    }
+                                }}
+                                disabled={zones.length === 0}
+                            >
+                                {zones.length > 0 ? (
+                                    zones.map(zone => (
+                                        <option key={zone.id} value={zone.id}>{zone.name}</option>
+                                    ))
+                                ) : (
+                                    <option value="">No zones available</option>
+                                )}
+                            </select>
+                            <button
+                                onClick={() => setShowCreateModal(true)}
+                                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 whitespace-nowrap"
+                            >
+                                <i className="fas fa-plus mr-2"></i>Add Zone
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1">
@@ -388,7 +441,7 @@ export const ParkingZonesDashboard: React.FC = () => {
                     <div className="flex items-end">
                         <button
                             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                            onClick={() => window.location.reload()}
+                            onClick={fetchAllData}
                         >
                             <i className="fas fa-sync-alt mr-2"></i>Refresh
                         </button>
@@ -403,7 +456,9 @@ export const ParkingZonesDashboard: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-800">Total Spots</h3>
                         <span className="text-2xl font-bold text-blue-600">{totalSpots}</span>
                     </div>
-                    <p className="text-sm text-gray-500 mt-2">In selected zone: {spots.length}</p>
+                    <p className="text-sm text-gray-500 mt-2">
+                        {selectedZone ? `In selected zone: ${spots.length}` : 'No zone selected'}
+                    </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
@@ -411,24 +466,32 @@ export const ParkingZonesDashboard: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-800">Available Now</h3>
                         <span className="text-2xl font-bold text-green-600">{availableSpots}</span>
                     </div>
-                    <p className="text-sm text-gray-500 mt-2">{spots.length > 0 ? Math.round((availableSpots / totalSpots) * 100) : 0}% availability</p>
+                    <p className="text-sm text-gray-500 mt-2">
+                        {totalSpots > 0 ? Math.round((availableSpots / totalSpots) * 100) : 0}% availability
+                    </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Occupancy Rate</h3>
-                        <span className="text-2xl font-bold text-orange-600">{currentZoneOccupancy}%</span>
+                        <span className="text-2xl font-bold text-orange-600">
+                            {selectedZone ? `${currentZoneOccupancy}%` : 'N/A'}
+                        </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">
-                        {currentZoneOccupancy > 85 ? 'High occupancy' :
-                            currentZoneOccupancy > 70 ? 'Moderate occupancy' : 'Low occupancy'}
+                        {selectedZone ? (
+                            currentZoneOccupancy > 85 ? 'High occupancy' :
+                                currentZoneOccupancy > 70 ? 'Moderate occupancy' : 'Low occupancy'
+                        ) : 'No zone selected'}
                     </p>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-800">Zone Type</h3>
-                        <span className="text-2xl font-bold text-purple-600">{selectedZone.zone_type}</span>
+                        <span className="text-2xl font-bold text-purple-600">
+                            {selectedZone ? selectedZone.zone_type : 'N/A'}
+                        </span>
                     </div>
                     <p className="text-sm text-gray-500 mt-2">Parking zone category</p>
                 </div>
@@ -448,47 +511,144 @@ export const ParkingZonesDashboard: React.FC = () => {
             </div>
 
             {/* Parking Spots Visualization */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-                <div className="p-6 border-b border-gray-200">
-                    <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-semibold text-gray-800">
-                            {selectedZone.name} - Spot Availability
-                        </h3>
-                        <div className="flex items-center space-x-4">
-                            <div className="flex items-center">
-                                <div className="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
-                                <span className="text-sm text-gray-600">Available</span>
-                            </div>
-                            <div className="flex items-center">
-                                <div className="w-3 h-3 rounded-full bg-red-500 mr-2"></div>
-                                <span className="text-sm text-gray-600">Occupied</span>
-                            </div>
-                            <div className="flex items-center">
-                                <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2"></div>
-                                <span className="text-sm text-gray-600">VIP</span>
+            {selectedZone && (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="p-6 border-b border-gray-200">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-semibold text-gray-800">
+                                {selectedZone.name} - Spot Availability
+                            </h3>
+                            <div className="flex items-center space-x-4">
+                                <div className="flex items-center">
+                                    <div className="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
+                                    <span className="text-sm text-gray-600">Available</span>
+                                </div>
+                                <div className="flex items-center">
+                                    <div className="w-3 h-3 rounded-full bg-red-500 mr-2"></div>
+                                    <span className="text-sm text-gray-600">Occupied</span>
+                                </div>
+                                <div className="flex items-center">
+                                    <div className="w-3 h-3 rounded-full bg-yellow-500 mr-2"></div>
+                                    <span className="text-sm text-gray-600">VIP</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="p-6">
-                    {/* Parking Spots Grid Visualization */}
-                    <div className="grid grid-cols-10 gap-2">
-                        {spots.map(spot => (
-                            <div
-                                key={spot.id}
-                                className={`aspect-square rounded flex items-center justify-center cursor-pointer transition-all
-                  ${spot.status !== 'empty' ? 'bg-red-500 hover:bg-red-600' :
-                                        spot.is_vip ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'}
-                `}
-                                title={`Spot ${spot.spot_number} (${spot.is_vip ? 'VIP' : 'Regular'}) - ${spot.status !== 'empty' ? 'Occupied' : 'Available'}`}
-                            >
-                                <span className="text-white text-xs font-medium">{spot.spot_number}</span>
+                    <div className="p-6">
+                        {spots.length > 0 ? (
+                            <div className="grid grid-cols-10 gap-2">
+                                {spots.map(spot => (
+                                    <div
+                                        key={spot.id}
+                                        className={`aspect-square rounded flex items-center justify-center cursor-pointer transition-all
+                      ${spot.status !== 'empty' ? 'bg-red-500 hover:bg-red-600' :
+                                                spot.is_vip ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'}
+                    `}
+                                        title={`Spot ${spot.spot_number} (${spot.is_vip ? 'VIP' : 'Regular'}) - ${spot.status !== 'empty' ? 'Occupied' : 'Available'}`}
+                                    >
+                                        <span className="text-white text-xs font-medium">{spot.spot_number}</span>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
+                        ) : (
+                            <div className="text-center py-8 text-gray-500">
+                                No parking spots available for this zone
+                            </div>
+                        )}
                     </div>
                 </div>
-            </div>
+            )}
+
+            {/* Create Zone Modal */}
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-semibold">Create New Parking Zone</h3>
+                            <button
+                                onClick={() => setShowCreateModal(false)}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <i className="fas fa-times"></i>
+                            </button>
+                        </div>
+
+                        {error && (
+                            <div className="mb-4 p-2 bg-red-100 text-red-700 rounded text-sm">
+                                {error}
+                            </div>
+                        )}
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Zone Name</label>
+                                <input
+                                    type="text"
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    value={newZone.name}
+                                    onChange={(e) => setNewZone({ ...newZone, name: e.target.value })}
+                                    placeholder="Enter zone name"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Zone Type</label>
+                                <select
+                                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    value={newZone.zone_type}
+                                    onChange={(e) => setNewZone({ ...newZone, zone_type: e.target.value })}
+                                >
+                                    <option value="visitor">visitor</option>
+                                    <option value="staff">staff</option>
+                                    <option value="student">student</option>
+                                </select>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+                                    <input
+                                        type="text"
+                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                        value={newZone.latitude}
+                                        onChange={(e) => setNewZone({ ...newZone, latitude: e.target.value })}
+                                        placeholder="Enter latitude"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">logitude</label>
+                                    <input
+                                        type="text"
+                                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                        value={newZone.logitude}
+                                        onChange={(e) => setNewZone({ ...newZone, logitude: e.target.value })}
+                                        placeholder="Enter logitude"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-6 flex justify-end space-x-3">
+                            <button
+                                onClick={() => setShowCreateModal(false)}
+                                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                                disabled={isCreating}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleCreateZone}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-400"
+                                disabled={isCreating}
+                            >
+                                {isCreating ? 'Creating...' : 'Create Zone'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

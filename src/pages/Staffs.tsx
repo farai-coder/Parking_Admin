@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BASE_URL } from '../api';
 
 interface Staff {
     id: string;
@@ -37,7 +38,7 @@ export const StaffDashboard: React.FC = () => {
     useEffect(() => {
         const fetchStaff = async () => {
             try {
-                const response = await fetch('http://localhost:8000/users/staff', {
+                const response = await fetch(`${BASE_URL}/users/staff`, {
                     headers: {
                         'accept': 'application/json'
                     }
@@ -98,7 +99,7 @@ export const StaffDashboard: React.FC = () => {
     const handleCreateStaff = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const response = await fetch('http://localhost:8000/users/', {
+            const response = await fetch(`${BASE_URL}/users/`, {
                 method: 'POST',
                 headers: {
                     'accept': 'application/json',
@@ -230,12 +231,12 @@ export const StaffDashboard: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-800">
                             Staff Records ({filteredStaff.length})
                         </h3>
-                        <button
+                        {/* <button
                             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                             onClick={() => setShowCreateModal(true)}
                         >
                             + Add New Staff
-                        </button>
+                        </button> */}
                     </div>
                 </div>
                 <div className="overflow-x-auto">

@@ -3,6 +3,7 @@ import * as echarts from 'echarts';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import { BASE_URL } from '../api';
 
 const localizer = momentLocalizer(moment);
 
@@ -20,6 +21,7 @@ interface Reservation {
     created_at: Date;
     license_plate: string;
     event_id?: string;
+    zone_name: string; // New field for zone name
 }
 
 interface ReservationStatusCount {
@@ -78,7 +80,7 @@ export const ReservationsDashboard: React.FC = () => {
             setLoading(true);
             try {
                 // Fetch reservations details
-                const reservationsResponse = await fetch('http://localhost:8000/reservations/details', {
+                const reservationsResponse = await fetch(`${BASE_URL}/reservations/details`, {
                     headers: {
                         'accept': 'application/json'
                     }
@@ -89,42 +91,44 @@ export const ReservationsDashboard: React.FC = () => {
                     start_time: new Date(r.start_time),
                     end_time: new Date(r.end_time),
                     created_at: new Date(r.created_at || r.start_time),
-                    user_name: 'User ' + r.user_id.slice(0, 4), // Mock user name
-                    spot_name: 'Spot ' + r.spot_id.slice(0, 4), // Mock spot name
-                    license_plate: 'PLATE' + r.user_id.slice(0, 4), // Mock license plate
-                    user_type: ['student', 'staff', 'visitor', 'vip'][Math.floor(Math.random() * 4)] as any // Mock user type
+                    user_name: r.user_full_name, // Mock user name
+                    spot_name: r.spot_name,
+                    license_plate: r.license_plate,
+                    zone_name:r.zone_name,
+                    user_type: r.user_role
+
                 })));
 
                 // Fetch statistics
-                const totalReservationsResponse = await fetch('http://localhost:8000/analytics/reservations_count', {
+                const totalReservationsResponse = await fetch(`${BASE_URL}/analytics/reservations_count`, {
                     headers: {
                         'accept': 'application/json'
                     }
                 });
                 const totalReservations = await totalReservationsResponse.json();
 
-                const activeReservationsResponse = await fetch('http://localhost:8000/analytics/active_reservations_count', {
+                const activeReservationsResponse = await fetch(`${BASE_URL}/analytics/active_reservations_count`, {
                     headers: {
                         'accept': 'application/json'
                     }
                 });
                 const activeReservations = await activeReservationsResponse.json();
 
-                const spotDistributionResponse = await fetch('http://localhost:8000/analytics/users/spot_distribution_by_role', {
+                const spotDistributionResponse = await fetch(`${BASE_URL}/analytics/users/spot_distribution_by_role`, {
                     headers: {
                         'accept': 'application/json'
                     }
                 });
                 const spotDistribution = await spotDistributionResponse.json();
 
-                const reservationStatusCountResponse = await fetch('http://localhost:8000/analytics/reservation_status_count', {
+                const reservationStatusCountResponse = await fetch(`${BASE_URL}/analytics/reservation_status_count`, {
                     headers: {
                         'accept': 'application/json'
                     }
                 });
                 const reservationStatusCounts = await reservationStatusCountResponse.json();
 
-                const dailyReservationCountResponse = await fetch('http://localhost:8000/analytics/reservation_status_daily_count', {
+                const dailyReservationCountResponse = await fetch(`${BASE_URL}/analytics/reservation_status_daily_count`, {
                     headers: {
                         'accept': 'application/json'
                     }
@@ -278,7 +282,7 @@ export const ReservationsDashboard: React.FC = () => {
             // Utilization Chart Options
             const utilizationOptions = {
                 title: {
-                    text: 'Spot Type Utilization',
+                    text: 'Spot Type Distribution',
                     left: 'center',
                     textStyle: { fontSize: 14 }
                 },
@@ -404,7 +408,7 @@ export const ReservationsDashboard: React.FC = () => {
 
     const handleCreateReservation = async () => {
         try {
-            const response = await fetch('http://localhost:8000/reservations/reserve-spot', {
+            const response = await fetch(`${BASE_URL}/reservations/reserve-spot`, {
                 method: 'POST',
                 headers: {
                     'accept': 'application/json',
@@ -616,8 +620,8 @@ export const ReservationsDashboard: React.FC = () => {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Zone Name</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Spot</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date/Time</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -628,11 +632,11 @@ export const ReservationsDashboard: React.FC = () => {
                             {filteredReservations.slice(0, 10).map(res => (
                                 <tr key={res.id} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                                        {res.id.slice(0, 8)}...
+                                        {res.user_name}
+                                        <div className="text-sm text-gray-500 capitalize">{res.user_type}</div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm font-medium text-gray-900">{res.user_name}</div>
-                                        <div className="text-sm text-gray-500 capitalize">{res.user_type}</div>
+                                        <div className="text-sm font-medium text-gray-900">{res.zone_name}</div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm font-medium text-gray-900">{res.spot_name}</div>

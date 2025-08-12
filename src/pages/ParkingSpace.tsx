@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as echarts from 'echarts';
+import { BASE_URL } from '../api';
 
 interface ParkingSpot {
     spot_number: string;
@@ -24,6 +25,35 @@ interface HourlyOccupancyTrend {
     };
 }
 
+interface ModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    title: string;
+    children: React.ReactNode;
+}
+
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+                <div className="p-4 border-b border-gray-200">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+                        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+                            ×
+                        </button>
+                    </div>
+                </div>
+                <div className="p-4">
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const ParkingSpacesDashboard: React.FC = () => {
     const [spots, setSpots] = useState<ParkingSpot[]>([]);
     const [filteredSpots, setFilteredSpots] = useState<ParkingSpot[]>([]);
@@ -33,6 +63,16 @@ export const ParkingSpacesDashboard: React.FC = () => {
     const [spotDistribution, setSpotDistribution] = useState<SpotTypeDistribution>({ student: 0, staff: 0, visitor: 0, vip: 0 });
     const [hourlyTrend, setHourlyTrend] = useState<HourlyOccupancyTrend>({});
     const [loading, setLoading] = useState<boolean>(true);
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+    const [zones, setZones] = useState<any[]>([]);
+    const [newSpot, setNewSpot] = useState({
+        spot_number: '',
+        lot_name: '',
+        is_vip: false,
+        parking_zone_id: ''
+    });
+    const [file, setFile] = useState<File | null>(null);
 
     const [filters, setFilters] = useState({
         lot: 'all',
@@ -41,66 +81,75 @@ export const ParkingSpacesDashboard: React.FC = () => {
         sort: 'number'
     });
 
+    const fetchAllData = async () => {
+        try {
+            setLoading(true);
+
+            // Fetch all spots
+            const spotsResponse = await fetch(`${BASE_URL}/spots/all-spots`, {
+                headers: {
+                    'accept': 'application/json'
+                }
+            });
+            const spotsData = await spotsResponse.json();
+            setSpots(spotsData);
+            setFilteredSpots(spotsData);
+
+            // Fetch total spots count
+            const totalSpotsResponse = await fetch(`${BASE_URL}/analytics/spots_count`, {
+                headers: {
+                    'accept': 'application/json'
+                }
+            });
+            const totalSpotsData = await totalSpotsResponse.json();
+            setTotalSpots(totalSpotsData);
+
+            // Fetch available spots count
+            const availableSpotsResponse = await fetch(`${BASE_URL}/analytics/spots/unoccupied_count`, {
+                headers: {
+                    'accept': 'application/json'
+                }
+            });
+            const availableSpotsData = await availableSpotsResponse.json();
+            setAvailableSpots(availableSpotsData);
+
+            // Fetch spot distribution by role
+            const distributionResponse = await fetch(`${BASE_URL}/analytics/users/spot_distribution_by_role`, {
+                headers: {
+                    'accept': 'application/json'
+                }
+            });
+            const distributionData = await distributionResponse.json();
+            setSpotDistribution(distributionData);
+
+            // Fetch hourly occupancy trend
+            const trendResponse = await fetch(`${BASE_URL}/analytics/hourly_occupancy_trend_by_zone_type?hours_back=24`, {
+                headers: {
+                    'accept': 'application/json'
+                }
+            });
+            const trendData = await trendResponse.json();
+            setHourlyTrend(trendData);
+
+            // Fetch zones
+            const zonesResponse = await fetch(`${BASE_URL}/spots/zones/`, {
+                headers: {
+                    'accept': 'application/json'
+                }
+            });
+            const zonesData = await zonesResponse.json();
+            setZones(zonesData);
+
+            setLoading(false);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            setLoading(false);
+        }
+    };
+
     // Fetch all data from APIs
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                setLoading(true);
-
-                // Fetch all spots
-                const spotsResponse = await fetch('http://localhost:8000/spots/all-spots', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const spotsData = await spotsResponse.json();
-                setSpots(spotsData);
-                setFilteredSpots(spotsData);
-
-                // Fetch total spots count
-                const totalSpotsResponse = await fetch('http://localhost:8000/analytics/spots_count', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const totalSpotsData = await totalSpotsResponse.json();
-                setTotalSpots(totalSpotsData);
-
-                // Fetch available spots count
-                const availableSpotsResponse = await fetch('http://localhost:8000/analytics/spots/unoccupied_count', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const availableSpotsData = await availableSpotsResponse.json();
-                setAvailableSpots(availableSpotsData);
-
-                // Fetch spot distribution by role
-                const distributionResponse = await fetch('http://localhost:8000/analytics/users/spot_distribution_by_role', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const distributionData = await distributionResponse.json();
-                setSpotDistribution(distributionData);
-
-                // Fetch hourly occupancy trend
-                const trendResponse = await fetch('http://localhost:8000/analytics/hourly_occupancy_trend_by_zone_type?hours_back=24', {
-                    headers: {
-                        'accept': 'application/json'
-                    }
-                });
-                const trendData = await trendResponse.json();
-                setHourlyTrend(trendData);
-
-                setLoading(false);
-            } catch (error) {
-                console.error('Error fetching data:', error);
-                setLoading(false);
-            }
-        };
-
-        fetchData();
+        fetchAllData();
     }, []);
 
     // Apply filters
@@ -118,18 +167,14 @@ export const ParkingSpacesDashboard: React.FC = () => {
         }
 
         if (filters.type !== 'all') {
-            // Note: Adjust this based on your actual type mapping
             result = result.filter(spot => {
                 if (filters.type === 'vip') return spot.is_vip;
-                // Add other type filters as needed
                 return true;
             });
         }
 
-        // Apply sorting
         result.sort((a, b) => {
             if (filters.sort === 'number') return a.spot_number.localeCompare(b.spot_number);
-            // Add other sorting options as needed
             return 0;
         });
 
@@ -141,14 +186,9 @@ export const ParkingSpacesDashboard: React.FC = () => {
         if (loading) return;
 
         const initializeCharts = () => {
-            // Spot Type Distribution Chart
             const typeChart = echarts.init(document.getElementById('spotTypeChart'));
-            // Occupancy Trend Chart
             const trendChart = echarts.init(document.getElementById('occupancyTrendChart'));
-            // Utilization Heatmap Chart
-            const heatmapChart = echarts.init(document.getElementById('utilizationHeatmap'));
 
-            // Spot Type Distribution Options
             const typeOptions = {
                 title: {
                     text: 'Spot Type Distribution',
@@ -197,7 +237,6 @@ export const ParkingSpacesDashboard: React.FC = () => {
                 ]
             };
 
-            // Occupancy Trend Options
             const trendData = Object.entries(hourlyTrend).map(([time, data]) => ({
                 time,
                 staff: data.staff,
@@ -249,82 +288,12 @@ export const ParkingSpacesDashboard: React.FC = () => {
                 ]
             };
 
-            // Utilization Heatmap Options
-            const heatmapOptions = {
-                title: {
-                    text: 'Spot Utilization Heatmap',
-                    left: 'center',
-                    textStyle: { fontSize: 14 }
-                },
-                tooltip: {
-                    position: 'top'
-                },
-                grid: {
-                    top: '15%',
-                    left: '3%',
-                    right: '4%',
-                    bottom: '3%',
-                    containLabel: true
-                },
-                xAxis: {
-                    type: 'category',
-                    data: Array.from({ length: 10 }, (_, i) => `Row ${i + 1}`),
-                    splitArea: {
-                        show: true
-                    }
-                },
-                yAxis: {
-                    type: 'category',
-                    data: Array.from({ length: 10 }, (_, i) => `Col ${i + 1}`),
-                    splitArea: {
-                        show: true
-                    }
-                },
-                visualMap: {
-                    min: 0,
-                    max: 100,
-                    calculable: true,
-                    orient: 'horizontal',
-                    left: 'center',
-                    bottom: '0%',
-                    inRange: {
-                        color: ['#10B981', '#F59E0B', '#EF4444']
-                    }
-                },
-                series: [
-                    {
-                        name: 'Occupancy Rate',
-                        type: 'heatmap',
-                        data: Array.from({ length: Math.min(100, spots.length) }, (_, i) => {
-                            return {
-                                value: [
-                                    Math.floor(i / 10),
-                                    i % 10,
-                                    spots[i]?.status === 'occupied' ? 100 : 0
-                                ]
-                            };
-                        }),
-                        label: {
-                            show: false
-                        },
-                        emphasis: {
-                            itemStyle: {
-                                shadowBlur: 10,
-                                shadowColor: 'rgba(0, 0, 0, 0.5)'
-                            }
-                        }
-                    }
-                ]
-            };
-
             typeChart.setOption(typeOptions);
             trendChart.setOption(trendOptions);
-            heatmapChart.setOption(heatmapOptions);
 
             return () => {
                 typeChart.dispose();
                 trendChart.dispose();
-                heatmapChart.dispose();
             };
         };
 
@@ -342,6 +311,72 @@ export const ParkingSpacesDashboard: React.FC = () => {
                     : spot
             )
         );
+    };
+
+    const handleCreateSpot = async () => {
+        try {
+            const response = await fetch(`${BASE_URL}/spots/spots`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    spot_number: newSpot.spot_number,
+                    lot_name: newSpot.lot_name,
+                    is_vip: newSpot.is_vip,
+                    parking_zone_id: newSpot.parking_zone_id
+                })
+            });
+
+            if (response.ok) {
+                alert('Parking space created successfully!');
+                setShowCreateModal(false);
+                setNewSpot({
+                    spot_number: '',
+                    lot_name: '',
+                    is_vip: false,
+                    parking_zone_id: ''
+                });
+                // Refresh all data after successful creation
+                await fetchAllData();
+            } else {
+                throw new Error('Failed to create parking space');
+            }
+        } catch (error) {
+            console.error('Error creating parking space:', error);
+            alert('Error creating parking space');
+        }
+    };
+
+    const handleBulkUpload = async () => {
+        if (!file) {
+            alert('Please select a file');
+            return;
+        }
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch(`${BASE_URL}/spots/bulk-upload`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                alert('Bulk upload completed successfully!');
+                setShowBulkUploadModal(false);
+                setFile(null);
+                // Refresh all data after successful upload
+                await fetchAllData();
+            } else {
+                throw new Error('Failed to process bulk upload');
+            }
+        } catch (error) {
+            console.error('Error during bulk upload:', error);
+            alert('Error during bulk upload');
+        }
     };
 
     if (loading) {
@@ -407,18 +442,36 @@ export const ParkingSpacesDashboard: React.FC = () => {
                             onChange={(e) => setFilters({ ...filters, sort: e.target.value as any })}
                         >
                             <option value="number">Spot Number</option>
-                            {/* Add other sorting options as needed */}
                         </select>
                     </div>
 
-                    <div className="flex items-end">
+                    <div className="flex items-end space-x-2">
                         <button
                             className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                            onClick={() => {
+                                setFilters({
+                                    lot: 'all',
+                                    status: 'all',
+                                    type: 'all',
+                                    sort: 'number'
+                                });
+                            }}
                         >
                             Reset Filters
                         </button>
+                        <button
+                            className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                            onClick={() => setShowCreateModal(true)}
+                        >
+                            Create
+                        </button>
+                        <button
+                            className="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                            onClick={() => setShowBulkUploadModal(true)}
+                        >
+                            Bulk Upload
+                        </button>
                     </div>
-
                 </div>
             </div>
 
@@ -470,15 +523,12 @@ export const ParkingSpacesDashboard: React.FC = () => {
             </div>
 
             {/* Charts Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div id="spotTypeChart" style={{ height: '300px' }}></div>
                 </div>
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
                     <div id="occupancyTrendChart" style={{ height: '300px' }}></div>
-                </div>
-                <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
-                    <div id="utilizationHeatmap" style={{ height: '300px' }}></div>
                 </div>
             </div>
 
@@ -503,7 +553,6 @@ export const ParkingSpacesDashboard: React.FC = () => {
                 </div>
 
                 <div className="p-6">
-                    {/* Parking Spots Grid */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                         {filteredSpots.slice(0, 50).map(spot => (
                             <div
@@ -528,7 +577,9 @@ export const ParkingSpacesDashboard: React.FC = () => {
                                 <div className="mt-2 text-sm text-gray-600">
                                     <div>Lot: {spot.lot_name}</div>
                                     <div>Status: {spot.status === 'occupied' ? 'Occupied' : 'Available'}</div>
-                                    <div>Zone: {spot.parking_zone_id.substring(0, 8)}...</div>
+                                    <div>Zone:  {zones.map(zone => (
+                                        <option key={zone.id} value={zone.id}>{zone.name}</option>
+                                    ))}</div>
                                 </div>
                             </div>
                         ))}
@@ -554,7 +605,7 @@ export const ParkingSpacesDashboard: React.FC = () => {
                                 className="text-gray-500 hover:text-gray-700"
                                 onClick={() => setSelectedSpot(null)}
                             >
-                                <i className="fas fa-times"></i>
+                                ×
                             </button>
                         </div>
                     </div>
@@ -611,6 +662,109 @@ export const ParkingSpacesDashboard: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* Create Parking Space Modal */}
+            <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Parking Space">
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Spot Number</label>
+                        <input
+                            type="text"
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            value={newSpot.spot_number}
+                            onChange={(e) => setNewSpot({ ...newSpot, spot_number: e.target.value })}
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Lot Name</label>
+                        <input
+                            type="text"
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            value={newSpot.lot_name}
+                            onChange={(e) => setNewSpot({ ...newSpot, lot_name: e.target.value })}
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Parking Zone</label>
+                        <select
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            value={newSpot.parking_zone_id}
+                            onChange={(e) => setNewSpot({ ...newSpot, parking_zone_id: e.target.value })}
+                            required
+                        >
+                            <option value="">Select a zone</option>
+                            {zones.map(zone => (
+                                <option key={zone.id} value={zone.id}>{zone.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-center">
+                        <input
+                            type="checkbox"
+                            id="is_vip"
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            checked={newSpot.is_vip}
+                            onChange={(e) => setNewSpot({ ...newSpot, is_vip: e.target.checked })}
+                        />
+                        <label htmlFor="is_vip" className="ml-2 block text-sm text-gray-700">
+                            VIP Spot
+                        </label>
+                    </div>
+
+                    <div className="flex justify-end space-x-3 pt-4">
+                        <button
+                            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                            onClick={() => setShowCreateModal(false)}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                            onClick={handleCreateSpot}
+                        >
+                            Create
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Bulk Upload Modal */}
+            <Modal isOpen={showBulkUploadModal} onClose={() => setShowBulkUploadModal(false)} title="Bulk Upload Parking Spaces">
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">CSV File</label>
+                        <input
+                            type="file"
+                            accept=".csv"
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
+                        />
+                        <p className="mt-1 text-sm text-gray-500">
+                            CSV should contain columns: spot_number, lot_name, is_vip, parking_zone_id
+                        </p>
+                    </div>
+
+                    <div className="flex justify-end space-x-3 pt-4">
+                        <button
+                            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                            onClick={() => setShowBulkUploadModal(false)}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                            onClick={handleBulkUpload}
+                        >
+                            Upload
+                        </button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 };

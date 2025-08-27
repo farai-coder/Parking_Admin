@@ -666,7 +666,7 @@ export const EventsDashboard: React.FC = () => {
                                             {new Date(event.start_time).toLocaleDateString()}
                                         </div>
                                         <div className="text-sm text-gray-500">
-                                            {new Date(event.start_time).toLocaleTimeString()} - {new Date(event.end_time).toLocaleTimeString()}
+                                            09:00 AM - 16:00 PM
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

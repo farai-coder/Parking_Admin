@@ -272,7 +272,7 @@ export const ParkingSpacesDashboard: React.FC = () => {
                     {
                         name: 'Staff',
                         type: 'line',
-                        data: trendData.map(item => item.staff),
+                        data: trendData.map(item => Number(item.staff) <= 70 ? Number(item.staff) : null),
                         smooth: true,
                         lineStyle: { width: 3 },
                         itemStyle: { color: '#10B981' }
@@ -280,13 +280,14 @@ export const ParkingSpacesDashboard: React.FC = () => {
                     {
                         name: 'Visitor',
                         type: 'line',
-                        data: trendData.map(item => item.visitor),
+                        data: trendData.map(item => Number(item.visitor) <= 70 ? Number(item.visitor) : null),
                         smooth: true,
                         lineStyle: { width: 3 },
                         itemStyle: { color: '#F59E0B' }
                     }
                 ]
             };
+
 
             typeChart.setOption(typeOptions);
             trendChart.setOption(trendOptions);

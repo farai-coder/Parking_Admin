@@ -122,7 +122,7 @@ export const ParkingZonesDashboard: React.FC = () => {
 
     const fetchZoneData = async (zoneId: string) => {
         try {
-            const response = await fetch(`${ BASE_URL}/spots/zones/${zoneId}/spots`, {
+            const response = await fetch(`${BASE_URL}/spots/zones/${zoneId}/spots`, {
                 headers: { 'accept': 'application/json' }
             });
             const data = await response.json();
@@ -155,7 +155,7 @@ export const ParkingZonesDashboard: React.FC = () => {
         setError(null);
 
         try {
-            const response = await fetch(`${ BASE_URL}/spots/zones/`, {
+            const response = await fetch(`${BASE_URL}/spots/zones/`, {
                 method: 'POST',
                 headers: {
                     'accept': 'application/json',
@@ -246,12 +246,23 @@ export const ParkingZonesDashboard: React.FC = () => {
 
             // Hourly Trend Chart
             const hourlyTrendChart = echarts.init(document.getElementById('hourlyTrendChart'));
-            const hourlyData = Object.entries(hourlyTrend).map(([time, data]) => {
-                return {
+            const hourlyData = Object.entries(hourlyTrend)
+                .map(([time, data]) => ({
                     time,
                     ...data
-                };
-            });
+                }))
+                .map(item => {
+                    return {
+                        time: item.time,
+                        ...Object.fromEntries(
+                            Object.entries(item).filter(([key, value]) =>
+                                key === "time" || Number(value) <= 100
+                            )
+                        )
+                    };
+                });
+
+            // console.log("hourly", hourlyTrend);
 
             const zoneNames = zones.length > 0 ? zones.map(zone => zone.name) : ['No zones'];
             const seriesData = zoneNames.map(zoneName => ({
